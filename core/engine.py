@@ -75,21 +75,19 @@ class FusionEngine:
 
         return True
 
-    # -----------------------------
-    # PIPELINE EXECUTION
-    # -----------------------------
+# -----------------------------
+# PIPELINE EXECUTION
+# -----------------------------
     def run_pipeline(self, target: str) -> Dict[str, Any]:
         """
         Executes full Fusion-AI scanning pipeline with real-time reporting sync.
         """
         logger.info(f"Starting Fusion-AI pipeline on target: {target}")
-
         context = ScanContext(target=target)
         execution_path: List[str] = []
 
         for module_name in self.pipeline_order:
             module = self.modules.get(module_name)
-
             if not module:
                 logger.debug(f"Module not loaded: {module_name}")
                 continue
@@ -99,46 +97,24 @@ class FusionEngine:
 
             try:
                 logger.info(f"Executing module: {module_name}")
-
                 # Each module must implement: run(context)
                 module.run(context)
                 execution_path.append(module_name)
-
+                
                 logger.info(
                     f"Completed module: {module_name} | Findings: {len(context.findings)}"
                 )
 
                 # -------------------------------------------------------------
-                # HOT SYNC REPORTING LAYER (PREVENTS DANCE ON 27 FINDINGS)
+                # HOT SYNC REPORTING LAYER (REAL-TIME DASHBOARD INJECTION)
                 # -------------------------------------------------------------
-                try:
-                    from reporting.report import ReportGenerator, archive_pipeline_report
-                    from intelligence.risk_engine import RiskEngine
-
-                    risk_engine = RiskEngine()
-                    current_risk = risk_engine.evaluate_context(context)
-
-                    # Structure dynamic white-label dictionary ledger
-                    hot_report = {
-                        "target": context.target,
-                        "risk_intelligence": current_risk,
-                        "findings": [f.to_dict() for f in context.findings],
-                        "execution_metadata": {"execution_path": execution_path}
-                    }
-
-                    # Commit intermediate findings directly to database logs
-                    archive_pipeline_report(hot_report)
-
-                    # Re-compile Neon Cyberpunk Dashboard dynamically after each module run
-                    reporter = ReportGenerator(context)
-                    reporter.generate_html_dashboard()
-
-                    logger.info(f"🔄 [LIVE SYNC] Dashboard updated. Global findings in database: {len(context.findings)}")
-                    sys.stdout.flush()
-
-                except Exception as sync_err:
-                    logger.debug(f"Reporting synchronization bypassed: {str(sync_err)}")
-
+                # -------------------------------------------------------------
+                # EVENT STREAM SYNC LAYER (SPEED OPTIMIZATION)
+                # -------------------------------------------------------------
+                # Real-time event streaming is now managed seamlessly and 
+                # concurrently by LiveSyncBus directly inside core/types.py!
+                import sys
+                sys.stdout.flush()
             except Exception as e:
                 logger.error(
                     f"Module execution failed [{module_name}]: {str(e)}"
@@ -146,7 +122,17 @@ class FusionEngine:
 
         # Save execution trace for intelligence layer
         context.metadata["execution_path"] = execution_path
+        
+        return {
+            "target": context.target,
+            "total_findings": len(context.findings),
+            "findings": [f.to_dict() for f in context.findings],
+            "execution_metadata": context.metadata
+        }
 
+        # Save execution trace for intelligence layer
+        context.metadata["execution_path"] = execution_path
+        
         return {
             "target": context.target,
             "total_findings": len(context.findings),

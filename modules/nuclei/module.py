@@ -38,42 +38,53 @@ context_sync_lock = threading.Lock()
 def live_dashboard_worker(context: ScanContext) -> None:
     """
     Independent asynchronous thread worker leveraging strict Mutex locking parameters.
-    Bypasses volatile disk I/O mutations by copying cumulative context graphs directly
-    from shared memory, guaranteeing real-time incremental counter updates.
+    Bypasses volatile disk I/O mutations by copying cumulative context graphs directly from shared memory,
+    guaranteeering real-time incremental counter updates and instant dashboard re-rendering.
     """
     import time
     import copy
-    from reporting.report import ReportGenerator
-    from core.types import ScanContext
-
+    from reporting.report import ReportGenerator, load_json_database, save_json_database, HISTORY_DATABASE
+    
     logger.info("📡 Asynchronous Cyberpunk live dashboard rendering engine thread engaged.")
-
-    # Access the global scope control tracking parameter directly
     global dashboard_active
     
     while dashboard_active:
-        # Prevent CPU throttling cycles by sleeping safely for 10 seconds
-        time.sleep(10)
-
+        # Sleep for 5 seconds to provide ultra-fast real-time synchronization
+        time.sleep(5)
         try:
-            # 2. Acquire thread-safe operational lock to execute atomic deep memory cloning
+            # Acquire thread-safe operational lock to execute atomic deep memory cloning
             with context_sync_lock:
                 if not context.findings:
                     continue
                 # Create a bulletproof isolated clone of the cumulative main memory context
                 local_context = copy.deepcopy(context)
-
-            # Enforce White-Label interface generation using the stable cumulative context snapshot
+            
+            # Hot sync memory alignment: Extract flat dictionary list from memory findings
+            raw_findings = [f.to_dict() for f in local_context.findings]
+            if raw_findings:
+                current_db = load_json_database(HISTORY_DATABASE)
+                if not isinstance(current_db, list):
+                    current_db = []
+                
+                # Check and append new unique memory findings to unblock api_server.py
+                for rf in raw_findings:
+                    exists = any(old.get("title") == rf.get("title") and old.get("target") == rf.get("target") for old in current_db)
+                    if not exists:
+                        current_db.append(rf)
+                
+                save_json_database(HISTORY_DATABASE, current_db)
+            
+            # Enforce white-label interface generation using the native authoritative method
             reporter = ReportGenerator(local_context)
-            reporter.generate_html_dashboard()
-
+            reporter.generate_html_report(local_context.findings)
+            
         except Exception as async_dashboard_err:
             logger.debug(f"Asynchronous dashboard builder update bypassed: {str(async_dashboard_err)}")
 
     # Final persistent execution block triggered when the master suite pipeline completes
     try:
         reporter = ReportGenerator(context)
-        reporter.generate_html_dashboard()
+        reporter.generate_html_report(context.findings)
     except Exception:
         pass
     logger.info("👋 Asynchronous dashboard compiler thread successfully released.")

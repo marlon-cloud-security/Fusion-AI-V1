@@ -112,17 +112,29 @@ class ScanContext:
         """
         Robust Contextual Deduplication Engine.
         Generates uniquely isolated target signatures utilizing technical asset footprints.
+        Triggers real-time asynchronous publishing bounds toward the centralized API Event Bus.
         """
-        # Contextual identifier mapping sequence
+        # Contextual identifier mapping sequence scope_location
         scope_location = finding.url if finding.url else (f"{self.target}:{finding.port}" if finding.port else self.target)
         
-        # Absolute uniqueness mapping tuple footprint
+        # Absolute uniqueness mapping tuple footprint signature
         signature = f"{finding.module}:{finding.finding_type}:{scope_location}:{finding.title}"
         
         if signature in self.processed_signatures:
             logger.debug(f"Deduplication engine filtered duplicate finding: {signature}")
             return False
-
+            
         self.processed_signatures.add(signature)
         self.findings.append(finding)
+        
+        # -----------------------------------------------------------------
+        # AUTONOMOUS EVENT BUS INTERCEPTION LAYER (REAL-TIME LIVE SYNC)
+        # -----------------------------------------------------------------
+        try:
+            from core.live_sync import live_sync_bus
+            live_sync_bus.publish_finding(finding)
+        except Exception:
+            # Silent safety passthrough fallback to preserve primary engine execution stability
+            pass
+
         return True

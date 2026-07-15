@@ -21,24 +21,20 @@ HOST = "192.168.56.101"
 PORT = 8000
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-MEMORY_FILE = os.path.join(DATA_DIR, "fusion_memory.json")
+# UNIFIED STORAGE LAYERS BINDING: Redirects source files toward the real output live database tracking engine
+MEMORY_FILE = os.path.join(BASE_DIR, "outputs", "fusion_history.json")
 
-os.makedirs(DATA_DIR, exist_ok=True)
 memory_lock = threading.Lock()
 
 # ============================================================ #
-# MEMORY ENGINE
+# UNIFIED DATABASE SYSTEM OPERATIONS INFRASTRUCTURE
 # ============================================================ #
 def initialize_memory():
+    """ Ensures database structures are mapped correctly before any fetch operation triggers """
+    os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
     if not os.path.exists(MEMORY_FILE):
-        initial = {
-            "created": datetime.now().isoformat(),
-            "updated": datetime.now().isoformat(),
-            "findings": [],
-            "history": []
-        }
-        save_memory(initial)
+        with open(MEMORY_FILE, "w", encoding="utf-8") as file:
+            json.dump([], file, indent=4)
 
 def load_memory():
     with memory_lock:
@@ -46,7 +42,7 @@ def load_memory():
             with open(MEMORY_FILE, "r", encoding="utf-8") as file:
                 return json.load(file)
         except Exception:
-            return {"findings": [], "history": []}
+            return []
 
 def save_memory(data):
     with memory_lock:
@@ -54,11 +50,13 @@ def save_memory(data):
             json.dump(data, file, indent=4, ensure_ascii=False)
 
 # ============================================================ #
-# DASHBOARD STATISTICS & DATA INJECTION
+# REAL-TIME METRICS DYNAMIC RESOLUTION ENGINE
 # ============================================================ #
 def calculate_status():
-    memory = load_memory()
-    findings = memory.get("findings", [])
+    # Direct list layout extraction from the live unlinked automated reporting history logs database
+    findings = load_memory()
+    if not isinstance(findings, list):
+        findings = []
     
     critical = 0
     high = 0
@@ -84,12 +82,11 @@ def calculate_status():
         "high": high,
         "medium": medium,
         "low": low,
-        "memory_entries": len(memory.get("history", [])),
-        "findings": findings  # CORRECCIÓN EXPLICITA: Entrega el buffer para que JS renderice las tarjetas dinámicamente
+        "findings": findings  # INJECTION PARADIGM: Passes down real runtime objects arrays to populate the supreme dashboard grid
     }
 
 # ============================================================ #
-# HTTP API SERVER WITH ADVANCED CORS CONTROL
+# HTTP API SERVER CORE LAYER WITH ENFORCED CORS MANAGEMENT
 # ============================================================ #
 class FusionAPIHandler(BaseHTTPRequestHandler):
     
@@ -104,7 +101,7 @@ class FusionAPIHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_OPTIONS(self):
-        """ Manejo nativo de pre-vuelo CORS para evitar bloqueos en navegadores """
+        """ Handles complex asynchronous browser CORS pre-flight handshake tracking procedures safely """
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
@@ -114,23 +111,17 @@ class FusionAPIHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
 
-        # ==================================================
-        # Dashboard live status
-        # ==================================================
+        # Real-time metrics statistical calculations dashboard pipeline mapping
         if path == "/api/dashboard/status":
             self.send_json(calculate_status())
             return
 
-        # ==================================================
-        # Full findings memory
-        # ==================================================
+        # Explicit full database files raw dump endpoint lookup boundings
         if path == "/api/dashboard/findings":
             self.send_json(load_memory())
             return
 
-        # ==================================================
-        # Health check
-        # ==================================================
+        # General system environmental check loop trace validation parameters
         if path == "/api/health":
             self.send_json({
                 "fusion": "online",
@@ -142,16 +133,16 @@ class FusionAPIHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 # ============================================================ #
-# START
+# RUNTIME START SEQUENCE BOOTSTRAPPING MATRIX
 # ============================================================ #
 if __name__ == "__main__":
     initialize_memory()
     print("""
  ══════════════════════════════════════════════
- ⚡ FUSION-AI // MEMORY API CORE v1.1
+ ⚡ FUSION-AI // UNIFIED MEMORY API CORE v1.2
  Dashboard API: http://192.168.56.101:8000
  Endpoint:      /api/dashboard/status
- Memory:        data/fusion_memory.json
+ Sync Source:   outputs/fusion_history.json
  CORS Control:  ENABLED [HTTP/WS Matrix Sync]
  ══════════════════════════════════════════════
  """)
