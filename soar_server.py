@@ -15,6 +15,9 @@ import threading
 import time
 import subprocess
 from urllib.parse import urlparse
+import hashlib
+import base64
+
 
 # Configure authoritative real-time log outputs for the defensive Aegis Shield
 logging.basicConfig(
