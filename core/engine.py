@@ -30,6 +30,7 @@ class FusionEngine:
         # Strict pipeline execution order
         self.pipeline_order: List[str] = [
             "nmap",
+            "iot_scan",
             "protocol",
             "httpx",
             "whatweb",

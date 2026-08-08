@@ -70,7 +70,7 @@ def run(context: ScanContext) -> None:
     if pacing_status == "aggressive":
         sample_limit = min(30, total_found)
         sqlmap_threads = "4"
-        performance_flags = ["--keep-alive", "--null-connection", "--o"]
+        performance_flags = ["--keep-alive", "--null-connection"]
     elif pacing_status == "balanced":
         sample_limit = min(15, total_found)
         sqlmap_threads = "2"
@@ -80,7 +80,26 @@ def run(context: ScanContext) -> None:
         sqlmap_threads = "1"
         performance_flags = []
 
+
+
+    print("\n🎯 SQLMAP VECTOR CONTROL")
+    print(f"Available exploit vectors: {len(prioritized_targets)}")
+    print("Enter number to test (0 = ALL):")
+
+    try:
+        user_limit = int(input("SQLMAP LIMIT > "))
+
+        if user_limit == 0:
+            sample_limit = len(prioritized_targets)
+        else:
+            sample_limit = min(user_limit, len(prioritized_targets))
+
+    except ValueError:
+        print("Invalid input. Using adaptive default.")
+
+
     target_endpoints = prioritized_targets[:sample_limit]
+
 
     print("\n" + "=" * 60)
     print("🎯 FUSION-AI AUTOMATED SQL INJECTION SUB-SYSTEM ACTIVE")
@@ -90,6 +109,7 @@ def run(context: ScanContext) -> None:
     sys.stdout.flush()
 
     output_directory = "outputs/sqlmap_out"
+
     # -------------------------------------------------------------------------
     # LAYER 3: ADAPTIVE INJECTION LOOP EXECUTION
     # -------------------------------------------------------------------------
@@ -114,7 +134,7 @@ def run(context: ScanContext) -> None:
             sys.stdout.flush()
 
             # Execute automated binary mapping with runtime stdout terminal streaming inheritance
-            subprocess.run(command, stdout=sys.stdout, stderr=subprocess.stderr, timeout=180.0, check=False)
+            subprocess.run(command, stdout=sys.stdout, stderr=sys.stderr, timeout=180.0, check=False)
             parse_sqlmap_results(output_directory, context, url)
 
         except subprocess.TimeoutExpired:

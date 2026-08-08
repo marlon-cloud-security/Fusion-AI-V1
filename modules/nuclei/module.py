@@ -17,6 +17,35 @@ from reporting.report import ReportGenerator
 
 logger = logging.getLogger("FusionEngine.Modules.Nuclei")
 
+# ============================================================
+# LIVE ENGINE TELEMETRY WRITER
+# ============================================================
+
+ENGINE_STATUS_FILE = "outputs/engine_status.json"
+
+
+def update_engine_status(batch, mode, health, elapsed, stream):
+
+    telemetry = {
+        "engine": "ONLINE",
+        "batch": batch,
+        "mode": mode,
+        "health": health,
+        "elapsed": elapsed,
+        "stream": stream,
+        "nuclei": {
+            "status": "ACTIVE",
+            "matches": 0
+        }
+    }
+
+    try:
+        with open(ENGINE_STATUS_FILE, "w", encoding="utf-8") as f:
+            json.dump(telemetry, f, indent=4)
+
+    except Exception as e:
+        logger.debug(f"ENGINE TELEMETRY WRITE ERROR: {e}")
+
 # ANSI Color Matrix Codes for High-Impact Terminal Rendering
 CLR_RESET = "\033[0m"
 CLR_CRITICAL = "\033[1;31m"  # Bold Red
@@ -210,6 +239,8 @@ def run(context: ScanContext) -> None:
     Dual-Pass Target Segregation, and asynchronous live-threaded dashboard generation.
     """
     global dashboard_active, temp_output_file_global
+    global_scan_start = time.time()
+
     
     engine = DecisionEngine()
     attack_plan = engine.generate_attack_plan(context)
@@ -342,11 +373,29 @@ def run(context: ScanContext) -> None:
         ]
 
         print(f"🚀 [BATCH {batch_idx}] [PACING: {pacing_status}] Scanning {len(chunk)} targets (Dynamic Window Size: {current_batch_size})...")
+
+        # 🔑 ULTRA-INTELLIGENT TELEMETRY UPDATER (PRESERVES LIVE STATES DURING BLOCKING RUNS)
+        current_live_health = last_batch_health if 'last_batch_health' in locals() else 100
+        
+        session_duration = int(time.time() - global_scan_start) if 'global_scan_start' in locals() else 0
+        s_hours, s_rem = divmod(session_duration, 3600)
+        s_mins, s_secs = divmod(s_rem, 60)
+        formatted_runtime = f"{s_hours:02d}:{s_mins:02d}:{s_secs:02d}" if session_duration > 0 else "RUNNING"
+
+        update_engine_status(
+            batch=batch_idx,
+            mode=pacing_status,
+            health=current_live_health,
+            elapsed=formatted_runtime,
+            stream="ACTIVE"
+        )
+
         print(f"   ⚙️ Active Rates: Concurrency={current_concurrency} | RateLimit={current_rate_limit} req/s | Timeout={current_timeout}s")
         sys.stdout.flush()
 
         start_time = time.time()
         process_result = subprocess.run(command, stdout=sys.stdout, stderr=subprocess.PIPE, check=False)
+
         duration = time.time() - start_time
         
         stderr_logs = process_result.stderr.decode("utf-8", errors="ignore") if process_result.stderr else ""
@@ -355,13 +404,25 @@ def run(context: ScanContext) -> None:
 
         # Re-evaluate live batch health coefficients based on transport behaviors
         last_batch_health = max(10, 100 - (timeouts_detected * 8) - (errors_detected * 4))
-        adapt_controller.update_profile_from_telemetry(timeouts_detected, errors_detected, last_batch_health)
+
+        update_engine_status(
+            batch=batch_idx,
+            mode=pacing_status,
+            health=last_batch_health,
+            elapsed=f"{int(duration)}s",
+            stream="SYNCED"
+        )
+
+        adapt_controller.update_profile_from_telemetry(
+            timeouts_detected,
+            errors_detected,
+            last_batch_health
+        )
 
         if os.path.exists(temp_output_file) and os.path.getsize(temp_output_file) > 0:
             last_batch_findings = parse_and_accumulate_batch(temp_output_file, context, silent_mode=False)
             total_exploits_cached += last_batch_findings
-            
-            print(f"\n   {CLR_GREEN}[✔] BATCH {batch_idx} COMPLETED | Unique findings discovered: {last_batch_findings}{CLR_RESET}")
+
             print(f"   [📊] TELEMETRY: Duration: {duration:.2f}s | Timeouts: {timeouts_detected} | Batch Health Score: {last_batch_health}/100")
             print(f"   {CLR_INFO}[📊] GLOBAL TOTAL EXPLOITS ARCHIVED: {total_exploits_cached}{CLR_RESET}\n")
             sys.stdout.flush()
