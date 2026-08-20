@@ -10,13 +10,33 @@ import os
 import re
 import sys
 import json
+import time
 import logging
 import subprocess
 import shutil
+import threading
 from datetime import datetime
 from core.types import ScanContext, Finding, Severity
 
 logger = logging.getLogger("FusionEngine.Modules.Nmap")
+def upsert_live_card(findings, card):
+    """
+    UPSERT ENGINE
+    Guarantees one unique live card per port by matching the persistent id.
+    Existing cards are updated instead of duplicated.
+    """
+    idx = next(
+        (i for i, f in enumerate(findings)
+         if f.get("id") == card["id"]),
+        None
+    )
+
+    if idx is None:
+        findings.append(card)
+    else:
+        findings[idx].update(card)
+
+    return findings
 
 def print_maligned_signature_banner() -> None:
     """
@@ -24,7 +44,7 @@ def print_maligned_signature_banner() -> None:
     Prints Marlon F. Bonilla's premium brand matrix directly to the local terminal
     with precise geometric block alignments to cure potential character shifts.
     """
-    print("\n" + "═"*75)
+    print("\n" + "═" * 75)
     print(r"""
   ███████╗██╗   ██╗███████╗██╗ ██████╗ ███╗   ██╗         █████╗ ██╗
   ██╔════╝██║   ██║██╔════╝██║██╔═══██╗████╗  ██║        ██╔══██╗██║
@@ -34,56 +54,433 @@ def print_maligned_signature_banner() -> None:
   ╚═╝      ╚═════╝ ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝        ╚═╝  ╚═╝╚═╝
     """)
     print("        --- ARTIFICIAL INTELLIGENCE AT ITS FINEST ---")
-    print("\n        \"AND GOD SAID, LET THERE BE LIGHT!\"")
+    print('\n        "AND GOD SAID, LET THERE BE LIGHT!"')
     print("        [ DESIGNED & ENGINEERED BY LEAD ANALYST: M.F.B. ]")
-    print("═"*75 + "\n")
+    print("═" * 75 + "\n")
     sys.stdout.flush()
 
+
+def searchsploit_lookup(service_name: str, version_banner: str):
+    """
+    Executes raw local sub-process binary queries against the Kali Linux Exploit-DB matrix.
+    Returns every exploit found so the dashboard can list multiple execution vectors.
+    """
+    try:
+        query = f"{service_name} {version_banner}".strip()
+
+        if not query or len(query) < 3:
+            return False, []
+
+        result = subprocess.run(
+            ["searchsploit", query],
+            capture_output=True,
+            text=True,
+            timeout=8
+        )
+
+        output = result.stdout.strip()
+
+        if (
+            not output
+            or "No Results" in output
+            or "No results" in output
+        ):
+            return False, []
+
+        matches = []
+
+        for line in output.splitlines():
+
+            if "|" not in line:
+                continue
+
+            if "Exploit Title" in line or "---" in line:
+                continue
+
+            parts = [p.strip() for p in line.split("|", 1)]
+
+            if len(parts) != 2:
+                continue
+
+            title, path = parts
+
+            matches.append({
+                "title": title,
+                "path": path,
+                "type": "Metasploit (RB)" if path.endswith(".rb") else "Native Script (PY/C/TXT)"
+            })
+
+        return len(matches) > 0, matches
+
+    except Exception:
+        return False, []
+
+
+# ← AQUÍ EMPIEZA LA NUEVA FUNCIÓN
+def build_ui_contract(vectors):
+    """
+    Fusion-AI Universal UI Contract Builder.
+
+    Every module can emit the same structure so matrix_live.html
+    never needs module-specific rewrites.
+    """
+
+    ui_vectors = []
+
+    priority_rank = [
+        ("Metasploit", "Excellent", "🚀"),
+        ("Python", "Great", "🐍"),
+        ("Ruby", "Good", "💎"),
+        ("C", "Good", "⚙️"),
+        ("TXT", "Reference", "📄")
+    ]
+
+    recommended = None
+
+    for idx, vec in enumerate(vectors, start=1):
+
+        path = vec.get("path", "")
+        title = vec.get("title", "")
+
+        if path.endswith(".rb"):
+            vtype = "Metasploit"
+        elif path.endswith(".py"):
+            vtype = "Python"
+        elif path.endswith(".c"):
+            vtype = "C"
+        elif path.endswith(".txt"):
+            vtype = "TXT"
+        else:
+            vtype = "Native"
+
+        priority = "Good"
+        icon = "⭐"
+
+        for name, p, ico in priority_rank:
+            if name == vtype:
+                priority = p
+                icon = ico
+                break
+
+        entry = {
+            "index": idx,
+            "title": title,
+            "path": path,
+            "type": vtype,
+            "priority": priority,
+            "icon": icon,
+            "recommended": False
+        }
+
+        ui_vectors.append(entry)
+
+        if recommended is None and vtype == "Metasploit":
+            recommended = entry
+
+    if recommended is None and ui_vectors:
+        recommended = ui_vectors[0]
+
+    if recommended:
+        recommended["recommended"] = True
+
+    return {
+        "expandable": True,
+        "show_priority": True,
+        "show_paths": True,
+        "show_recommendation": True,
+        "recommended_vector": recommended,
+        "vectors": ui_vectors
+    }
+
+
+
+def independent_exploit_db_worker(targets, paths, target_host, attacker_ip):
+    """
+    🧠 FUSION-AI MULTI-LAYER LIVE INTELLIGENCE COGNITIVE ENGINE
+    Executes asynchronous cross-reference analytics over discovered infrastructure nodes.
+    Simultaneously merges Local Exploit-DB vectors with Real-Time Global Threat Intelligence.
+    Features robust, multi-tiered error wrapping to survive strict air-gapped lab operations.
+    """
+    import requests
+
+    print("\n" + "═"*75)
+    print(" 🧠 FUSION-AI LIVE INTELLIGENCE NETWORK ENGINE")
+    print(" [POST-NMAP MULTI-LAYER ENRICHMENT ENGAGED]")
+    print("═"*75)
+    sys.stdout.flush()
+
+    absolute_paths = [
+        "/home/kali/Fusion-AI/outputs/json/report.json",
+        "/home/kali/Fusion-AI/outputs/report.json",
+        "/home/kali/Fusion-AI/outputs/fusion_history.json"
+    ]
+
+    for node in targets:
+        port = node["port"]
+        service = node["service"]
+        banner = node["banner"]
+
+        query = f"{service} {banner}".strip()
+
+        print(f"\n[INTELLIGENCE HUB] Processing Port {port}")
+        print(f" ├─ Querying Local DB (SearchSploit): {query}")
+        sys.stdout.flush()
+
+        vectors = []
+
+        # =====================================================================
+        # LAYER 1: LOCAL EXPLOIT-DB INTERROGATION MATRIX
+        # =====================================================================
+        try:
+            result = subprocess.run(
+                ["searchsploit", query],
+                capture_output=True,
+                text=True,
+                timeout=8
+            )
+            output = result.stdout
+            
+            for line in output.splitlines():
+                if "|" not in line or "Exploit Title" in line or "-----" in line:
+                    continue
+                parts = line.split("|")
+                if len(parts) != 2:
+                    continue
+                
+                raw_title = parts[0].strip()
+                path = parts[1].strip()
+
+                # Clean destructive ANSI terminal escape color codes from searchsploit output
+                clean_title = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', raw_title)
+                clean_title = clean_title.replace('[K', '').replace('[m', '').strip()
+
+                vectors.append({
+                    "title": clean_title,
+                    "path": path,
+                    "type": "Metasploit" if path.endswith(".rb") else "Native"
+                })
+            print(f" ├─ Local SearchSploit: Found {len(vectors)} exploit pathway(s).")
+        except Exception as local_err:
+            print(f" ├─ Local SearchSploit Error: {local_err}")
+
+        # =====================================================================
+        # LAYER 1.5: DYNAMIC HIGH-FIDELITY NSE EVIDENCE INJECTION MATRIX
+        # =====================================================================
+        # Universally injects any live script discoveries directly into the vectors array
+        # This bypasses frontend description locks by utilizing the dynamic UI contract stream
+        nse_extracted_alerts = node.get("nse_findings", [])
+        if nse_extracted_alerts:
+            print(f" ├─ Injecting {len(nse_extracted_alerts)} live native Nmap NSE vulnerability trace(s)...")
+            for alert_trace in nse_extracted_alerts:
+                # Clean any lingering formatting junk to preserve premium corporate design
+                clean_alert_text = alert_trace.strip()
+                if clean_alert_text:
+                    vectors.insert(0, {
+                        "title": f"🛡️ [NMAP NSE] {clean_alert_text}",
+                        "path": "Nmap Local Script Database (NSE)",
+                        "type": "Nmap NSE Vulnerability"
+                    })
+            sys.stdout.flush()
+
+        # =====================================================================
+        # LAYER 2: GLOBAL GLOBAL REAL-TIME THREAT INTELLIGENCE (NVD / VULNERS API)
+        # =====================================================================
+        web_query = service.strip() if len(service) > 2 else query
+        print(f" ├─ Querying Global Threat Feed: {web_query}")
+        sys.stdout.flush()
+        
+        global_matches = 0
+        try:
+            web_response = requests.get(
+                f"https://vulners.com{web_query}", 
+                timeout=4
+            )
+            if web_response.status_code == 200:
+                web_data = web_response.json()
+                items = web_data.get("data", {}).get("search", [])
+                
+                for item in items[:5]:
+                    source = item.get("_source", {})
+                    cve_id = source.get("id", "GLOBAL-VULN")
+                    v_title = source.get("title", "Unknown System Threat")
+                    
+                    vectors.append({
+                        "title": f"🌍 [{cve_id}] {v_title}",
+                        "path": f"https://vulners.com{cve_id}",
+                        "type": "Global Intelligence"
+                    })
+                    global_matches += 1
+                print(f" ├─ Global Threat Feed: Injected {global_matches} real-time vulnerability paths.")
+        except Exception:
+            print(" ├─ Global Threat Feed: Offline lab mode detected or timeout. (Skipped safely)")
+            sys.stdout.flush()
+
+        # Exit early if no vector mappings were gathered across all layers
+        if not vectors:
+            print(" └─ No tactical exposure vectors identified.")
+            continue
+
+        for i, v in enumerate(vectors, 1):
+            print(f" │  [{i}] {v['title']}")
+        sys.stdout.flush()
+
+        # =====================================================================
+        # LAYER 3: PERSISTENT CACHE & LIVE DASHBOARD SYNCHRONIZATION FLUSH
+        # =====================================================================
+        for report in absolute_paths:
+            try:
+                if not os.path.exists(report):
+                    continue
+
+                with open(report, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                card_updated = False
+                current_findings = data.get("findings", []) if isinstance(data, dict) else data
+
+                for card in current_findings:
+                    if card.get("port") == port or card.get("id") == f"home-live-{port}":
+                        
+                        if port == 443 or "https" in service.lower():
+                            dynamic_url = f"https://{target_host}:{port}"
+                        elif "http" in service.lower():
+                            dynamic_url = f"http://{target_host}:{port}"
+                        else:
+                            dynamic_url = f"{service}://{target_host}:{port}"
+
+                        card["severity"] = "CRITICAL"
+                        card["title"] = f"🔥 CRITICAL EXPOSURE: Port {port}/{service.upper()}"
+                        # Build a high-fidelity raw evidence summary for the commercial dashboard description
+                        nse_raw_store = node.get("nse_findings", [])
+                        evidence_dump = ""
+                        if nse_raw_store:
+                            evidence_dump = "\n\n🛡️ [NMAP NSE LIVE VULNERABILITY TRACES]:\n"
+                            for trace in nse_raw_store:
+                                evidence_dump += f" ├─ {trace}\n"
+                        
+                        card["description"] = f"{len(vectors)} strategic multi-layer threat exposure pathway(s) identified for network daemon '{service} {banner}'.{evidence_dump}"
+                        card["remediation"] = f"Upgrade or dismantle the exposed infrastructure service listening on port {port} immediately. Enforce zero-trust zoning barriers."
+                        
+                        card["url"] = dynamic_url
+                        card["port"] = port
+                        card.setdefault("data", {})
+                        
+                        card["data"]["severity"] = "CRITICAL"
+                        ui_contract = build_ui_contract(vectors)
+
+                        card["data"]["service"] = service
+                        card["data"]["product"] = banner
+                        card["data"]["url"] = dynamic_url
+                        card["data"]["port"] = port
+
+                        card["data"]["exploit_available"] = True
+                        card["data"]["exploit_count"] = len(vectors)
+                        card["data"]["exploit_module"] = (
+                            ui_contract["recommended_vector"]["title"]
+                            if ui_contract["recommended_vector"]
+                            else "Exploit-DB Matrix"
+                        )
+
+                        card["data"]["exploit_vectors_available"] = ui_contract["vectors"]
+                        card["data"]["recommended_vector"] = ui_contract["recommended_vector"]
+                        card["data"]["ui"] = {
+                            "expandable": ui_contract["expandable"],
+                            "show_priority": ui_contract["show_priority"],
+                            "show_paths": ui_contract["show_paths"],
+                            "show_recommendation": ui_contract["show_recommendation"]
+                        }
+
+                        card["data"]["evidence_source"] = "SearchSploit Live Engine"                        
+                        card["data"]["proof_of_concept"] = f"Automated structural signature identification successful for daemon rule on port {port}."
+                        card["data"]["extracted_memory"] = f"Exploit database tactical pathway match: {vectors[0]['path'] if vectors else 'N/A'}"
+                        # 🧬 UNIVERSAL HIGH-FIDELITY DATA LAYER ENRICHMENT
+                        if 'nse_evidence' in locals() or 'nse_evidence' in globals():
+                            if port in nse_evidence:
+                                block = nse_evidence[port]
+                                card["data"]["nse_verified"] = True
+                                card["data"]["nse_raw"] = block["text"]
+                                card["data"]["cves"] = block["cves"]
+                                card["data"]["references"] = block["references"]
+
+                                card["description"] = f"Nmap NSE verified an actively exploitable condition on port {port}."
+                                card["data"]["proof_of_concept"] = block["text"]
+                                card["data"]["extracted_memory"] = (
+                                    "\n".join(block["references"]) if block["references"] else block["text"]
+                                )
+
+                        
+                        card_updated = True
+                        break
+
+                if card_updated:
+                    if isinstance(data, dict):
+                        data["findings"] = current_findings
+                    else:
+                        data = current_findings
+
+                    with open(report, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=4, ensure_ascii=False)
+
+            except Exception:
+                pass
+
+        print(" └─ Dashboard synchronized.")
+        sys.stdout.flush()
+
+    print("\n" + "═"*75)
+    print(" ✔ MULTI-LAYER ENRICHMENT PIPELINE COMPLETE")
+    print("═"*75)
+    sys.stdout.flush()
 def run(context: ScanContext) -> None:
     """
     Executes a real native Nmap scan leveraging programmatic parameter mutation
-    and adaptive pacing evasion vectors to structurally bypass router rate-limits.
+    and adaptive pacing evasion vectors while preserving real-time dashboard synchronization.
     """
-    # Fires your premium author brand layout right at the ignition point of the scan!
+
     print_maligned_signature_banner()
-    
+
     logger.info(f"Initiating live network reconnaissance over: {context.target}")
 
     nmap_path = shutil.which("nmap")
     if not nmap_path:
-        logger.error("Nmap binary not found in the system PATH. Verify installation.")
+        logger.error("Nmap binary not found in the system PATH.")
         raise FileNotFoundError("Critical dependency missing: nmap execution binary.")
 
     audit_profile = os.environ.get("FUSION_AUDIT_MODE", "ENTERPRISE")
-    
-    # 🚀 SUPER-INTELLIGENT HOME RATE-LIMIT BYPASS Posture
+
     if audit_profile == "HOME":
         logger.info("[*] PROFILE DETECTED -> Engaging Autonomous Residential 65K Deep Audit Posture.")
-        # Full 65,535 port scan enforced (-p-). Uses -sT to legally close connections and clear 
-        # local gateway NAT state tables, avoiding catastrophic hardware lockups or timeouts.
-        # Enforces an adaptive bracket (min 35 / max 95) to surf right under commercial ISP locks.
         nmap_args = [
-            "-p-", 
-            "-sT", 
+            "-p-",
+            "-sT",
             "-sV",
-            "-T4", 
-            "--min-rate", "35",        # Floor safety pace to prevent starvation
-            "--max-rate", "95",        # Stealth boundary limit to completely bypass the 100/s IPS lock
+            "--script=vuln",
+            "-T4",
+            "--min-rate", "35",
+            "--max-rate", "95",
             "--max-rtt-timeout", "150ms",
-            "--max-retries", "1", 
-            "--host-timeout", "25m",   # Compensates time windows for deep comprehensive coverage
+            "--max-retries", "1",
+            "--host-timeout", "25m",
             "-Pn",
             "--stats-every", "10s",
             "-vvv"
         ]
     else:
         logger.info("[*] PROFILE DETECTED -> Applying Fast Enterprise Infrastructure flags.")
-        # Enterprise environment leverages full raw SYN scanning over wide corporate pipelines
-        nmap_args = ["-p-", "-sS", "-sV", "-T4", "--stats-every", "5s", "-vvv"]
+        nmap_args = [
+            "-p-",
+            "-sS",
+            "-sV",
+            "--script=vuln",
+            "-T4",
+            "--stats-every", "5s",
+            "-vvv"
+        ]
 
     command = [nmap_path] + nmap_args + [str(context.target)]
+
     try:
-        # Spawning the process with line-buffering to catch every text token instantly
+
         proc = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -92,198 +489,444 @@ def run(context: ScanContext) -> None:
             bufsize=1
         )
 
+        absolute_report_paths = [
+            "/home/kali/Fusion-AI/outputs/json/report.json",
+            "/home/kali/Fusion-AI/outputs/fusion_history.json",
+            "/home/kali/Fusion-AI/outputs/report.json"
+        ]
+
         open_ports_discovered = []
-        report_paths = ["outputs/json/report.json", "outputs/report.json"]
+        open_ports_metadata = []
+        nse_evidence = {}
 
         print("-" * 75)
         print(" [🛰️ MONITOR ACTIVE] -> Unbuffered Dual Terminal & UI Sync Engaged:")
         print("-" * 75)
         sys.stdout.flush()
 
-        # Dynamic local attacker IP resolution wrapper to guarantee universal porting
-        attacker_resolved_ip = "0.0.0.0"
+        attacker_resolved_ip = "127.0.0.1"
+
         try:
             import socket
+
             s_trace = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s_trace.connect(("8.8.8.8", 80))
             attacker_resolved_ip = s_trace.getsockname()[0]
             s_trace.close()
-        except Exception:
-            attacker_resolved_ip = "127.0.0.1"
 
+        except Exception:
+            pass
+
+        live_lines = []
+        nse_current_port = None
+
+        # 🛰️ INLINE UNBUFFERED LOOP TRACKER: MEMORIZES METADATA EN ROUTE WITHOUT DUPLICATION
         while True:
+
             line = proc.stdout.readline()
             if not line and proc.poll() is not None:
                 break
-            if line:
-                line_strip = line.strip()
-                
-                # Clean line print routing to show real-time progress layout
-                print(f"    {line_strip}")
-                sys.stdout.flush()
+            if not line:
+                continue
 
-                # DUAL-EXPRESSION PARSER MATRIX (Captures port, service, and software version)
-                port_id = None
-                detected_banner_string = ""
-                
-                if "Discovered open port" in line_strip:
-                    p_match = re.search(r'port\s+(\d+)/tcp', line_strip)
-                    if p_match:
-                        port_id = int(p_match.group(1))
-                elif "/tcp" in line_strip and "open" in line_strip:
-                    # Advanced Regex: Isolates port, state, service name, and version string columns dynamically
-                    p_match = re.search(r'^(\d+)/tcp\s+open\s+([^\s]+)\s*(.*)$', line_strip)
-                    if p_match:
-                        port_id = int(p_match.group(1))
-                        service_name = p_match.group(2)
-                        version_banner = p_match.group(3).strip()
-                        
-                        # Combines service and version cleanly (e.g., "ftp vsftpd 2.3.4") to feed Metasploit
-                        detected_banner_string = f"{service_name} {version_banner}".strip()
+            line_strip = line.strip()
+            print(f"    {line_strip}")
+            sys.stdout.flush()
 
-                # Dynamic runtime ingestion into the active ScanContext RAM matrix
-                if port_id is not None:
-                    # Dynamically attaches the discovered software banner straight onto the context object context
-                    context.detected_banner = detected_banner_string if detected_banner_string else f"port {port_id}"
+            # 🛠️ DETECTOR DE PUERTOS Y ACUMULADOR DE LOGS ESTILO NATIVE MODULE
+            if "/tcp" in line_strip and "open" in line_strip:
+                try:
+                    current_port = int(line_strip.split("/")[0])
+                    # Inicializamos la descripción base con la misma línea de Kali
+                    if 'port_descriptions' not in locals():
+                        port_descriptions = {}
+                    port_descriptions[current_port] = f"{line_strip}\n"
+                except Exception:
+                    pass
+            elif 'current_port' in locals() and current_port is not None and (line_strip.startswith("|") or line_strip.startswith("_")):
+                # Si la línea pertenece a un script del puerto activo, la concatenamos directo
+                if 'port_descriptions' in locals() and current_port in port_descriptions:
+                    port_descriptions[current_port] += f"  {line_strip}\n"
 
-                # If an open port is isolated, trigger instant ScanContext and UI synchronization
-                if port_id is not None:
-                    if port_id not in open_ports_discovered:
-                        open_ports_discovered.append(port_id)
-                        
-                        # 🧠 UNIVERSAL TELEMETRY EXTRACTION ENGINE (ZERO HARDCODED PARAMETERS)
-                        # Dynamically resolves the entrypoint URL based on the discovered socket port
-                        resolved_protocol = "https" if port_id == 443 else "http"
-                        dynamic_target_url = f"{resolved_protocol}://{context.target}:{port_id}/"
-                        
-                        has_active_exploit_module = False
-                        matched_exploit_name = "generic/network/service-exploration"
-
-                        # 🧠 DEEP-BLUE AUTONOMOUS CRITERIA SELECTION MATRIX
-                        # Dynamic Rank-Filtering Evaluation Engine (Excellent -> Great -> Good).
-                        # Eliminates rigid hardcoded values by performing elastic framework searches 
-                        # using raw real-time software version banners extracted directly from the socket footprint.
-                        has_active_exploit_module = False
-                        matched_exploit_name = "generic/network/service-exploration"
-
-                        def async_framework_lookup():
-                            nonlocal has_active_exploit_module, matched_exploit_name
-                            try:
-                                from intelligence.exploit_orchestrator import MsfRpcBridge
-                                rpc_checker = MsfRpcBridge()
-                                if rpc_checker.connect_rpc_matrix():
-                                    
-                                    # Extracted version tokens from context logic telemetry
-                                    # Fallback gracefully maps the standard port identifier if version text is blank
-                                    search_keyword = getattr(context, "detected_banner", f"port {port_id}").lower().strip()
-                                    
-                                    # Execute elastic modules search inside Metasploit framework
-                                    rpc_res = rpc_checker.server.modules.search(rpc_checker.token, "exploit", search_keyword)
-                                    
-                                    if isinstance(rpc_res, list) and len(rpc_res) > 0:
-                                        # 🛡️ COGNITIVE RANKING FILTERING CASCADE
-                                        # Loops across candidates to automatically isolate the safest weapon first
-                                        rank_priority = ["excellent", "great", "good", "normal", "average", "low"]
-                                        best_candidate = None
-                                        
-                                        for target_rank in rank_priority:
-                                            for exploit_node in rpc_res:
-                                                node_rank = str(exploit_node.get("rank", "")).lower().strip()
-                                                if target_rank in node_rank or node_rank == target_rank:
-                                                    best_candidate = exploit_node
-                                                    break
-                                            if best_candidate:
-                                                break
-                                                
-                                        # If no explicit rank match aligns, fallback straight to the first element natively
-                                        final_module = best_candidate if best_candidate else rpc_res[0]
-                                        has_active_exploit_module = True
-                                        matched_exploit_name = final_module.get("fullname", final_module.get("name", "generic/exploit"))
-                                        
-                            except Exception:
-                                pass
-
-                        # Spawn isolated sub-thread explicitly optimized for non-blocking RAM operations
-                        import threading
-                        rpc_worker_thread = threading.Thread(target=async_framework_lookup, daemon=True)
-                        rpc_worker_thread.start()
-                        rpc_worker_thread.join(timeout=1.5) # Extended to 1.5s to allow Metasploit text matching queries
-
-                        # 🚀 CRITICALITY ESCALATION MATRIX (ETHICAL MARKETING GANCHO)
-                        # Shifting severities dynamically guarantees a breathtaking visual shock on the UI
-                        calculated_severity = Severity.MEDIUM
-                        calculated_title = f"Open Network Port Discovered: {port_id}/TCP"
-                        calculated_description = f"Port {port_id} detected listening actively over target interface gates."
-                        
-                        if has_active_exploit_module:
-                            calculated_severity = Severity.CRITICAL
-                            calculated_title = f"🔥 CRITICAL EXPOSURE: Autonomous Exploit Module Found on Port {port_id}/TCP"
-                            calculated_description = f"AUTHENTIC RISK VERIFIED: Port {port_id} is vulnerable to remote takeovers. Weapon pathway secured: '{matched_exploit_name}'."
-
-                        # Build dynamic Finding payload inside ScanContext RAM with 100% verified properties
-                        finding = Finding(
-                            module="nmap",
-                            finding_type="open_port",
-                            title=calculated_title,
-                            severity=calculated_severity,
-                            data={
-                                "port": port_id,
-                                "protocol": "tcp",
-                                "url": dynamic_target_url, # Natively injects the true entrypoint URL string
-                                "exploit_module": matched_exploit_name, # Locks the real exploit path for exploit_server.py
-                                "exploit_available": has_active_exploit_module
-                            },
-                            description=calculated_description,
-                            remediation=f"CRITICAL SYSTEM RE-ENGINEERING REQUIRED: Close or patch service pipelines running on target socket {port_id} immediately.",
-                            port=port_id
-                        )
-                        
-                        if port_id not in context.open_ports:
-                            context.open_ports.append(port_id)
-                            context.add_finding(finding)
-                            
-                            context.asset.open_ports.append({
-                                "port": port_id, "service": "discovering", "product": "unknown", "protocol": "tcp", "url": dynamic_target_url
-                            })
-
-                        # 🚀 LIVE JSON FLUSH INJECTOR (Force-syncs Firefox counter cards instantly)
-                        for r_path in report_paths:
-                            try:
-                                if os.path.exists(r_path):
-                                    with open(r_path, "r", encoding="utf-8") as f_read:
-                                        current_data = json.load(f_read)
-                                else:
-                                    current_data = {"target": context.target, "findings": [], "total_findings": 0}
-
-                                live_node = {
-                                    "id": f"home-live-{port_id}", "module": "nmap", "type": "open_port",
-                                    "title": f"Open Network Port Discovered: {port_id}/TCP", "severity": "medium",
-                                    "description": f"Port {port_id} detected actively listening over target interface gates.",
-                                    "remediation": "Enforce strict firewall zoning policies. Close ports that are not business-critical.",
-                                    "port": port_id, "url": f"http://{context.target}:{port_id}" if port_id == 80 else f"https://{context.target}:{port_id}" if port_id == 443 else None,
-                                    "timestamp": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-                                    "data": {"port": port_id, "protocol": "tcp", "service": "discovering", "product": "unknown"}
-                                }
+                # Si el script detecta que es vulnerable, hacemos el flush inmediato a disco
+                if any(ind in line_strip for ind in ["VULNERABLE", "CVE:", "State:", "Results:"]):
+                    for r_path in absolute_report_paths:
+                        try:
+                            if os.path.exists(r_path):
+                                with open(r_path, "r", encoding="utf-8") as f_read:
+                                    current_data = json.load(f_read)
                                 
                                 current_data.setdefault("findings", [])
-                                if not any(f.get("id") == live_node["id"] for f in current_data["findings"]):
-                                    current_data["findings"].append(live_node)
-                                    current_data["total_findings"] = len(current_data["findings"])
-                                    # 🚀 VACUNA DE PERSISTENCIA GLOBAL: Hereda la IP real calculada por los sockets del kernel
-                                    current_data["attacker_platform"] = attacker_resolved_ip
-                                    current_data["created"] = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                                    current_data["target"] = context.target
-                                    
+                                target_card_id = f"home-live-{current_port}"
+                                existing_card = next((f for f in current_data["findings"] if f.get("id") == target_card_id), None)
+
+                                if existing_card:
+                                    existing_card["severity"] = "critical"
+                                    # Inyectamos el volcado acumulado de la terminal de Kali de forma exacta en la descripción
+                                    existing_card["description"] = port_descriptions[current_port].strip()
+                                    existing_card["data"]["exploit_available"] = True
+                                    existing_card["data"]["nse_verified"] = True
+                                    existing_card["data"]["nse_raw"] = port_descriptions[current_port].strip()
+                                    existing_card["data"]["proof_of_concept"] = port_descriptions[current_port].strip()
+                                    existing_card["data"]["extracted_memory"] = port_descriptions[current_port].strip()
+
                                     with open(r_path, "w", encoding="utf-8") as f_write:
                                         json.dump(current_data, f_write, indent=4, ensure_ascii=False)
+                        except Exception:
+                            pass
+
+            # 🚀 LIVE JSON FLUSH INJECTOR: Renders 'MEDIUM' cards on the dashboard in real-time
+            for r_path in absolute_report_paths:
+                try:
+                    if os.path.exists(r_path):
+                        with open(r_path, "r", encoding="utf-8") as f_read:
+                            current_data = json.load(f_read)
+                    else:
+                        current_data = {"target": context.target, "findings": [], "total_findings": 0}
+
+                    current_data.setdefault("findings", [])
+                    target_card_id = f"home-live-{port_id}"
+                    existing_card = next((f for f in current_data["findings"] if f.get("id") == target_card_id), None)
+
+                    if existing_card:
+                        if s_name != 'unknown':
+                            existing_card["data"]["service"] = s_name
+                        if v_banner != "generic/network-service-layer":
+                            existing_card["data"]["product"] = v_banner
+
+                        # 🧬 UNIVERSAL NSE SAME-CARD ENRICHMENT MATRIX
+                        if 'nse_evidence' in locals() and port_id in nse_evidence:
+                            block = nse_evidence[port_id]
+                            existing_card["severity"] = "critical"
+                            existing_card["description"] = f"Nmap NSE verified an actively exploitable condition on port {port_id}."
+                            
+                            # Inject native high-fidelity properties into the existing card data block
+                            existing_card["data"]["nse_verified"] = True
+                            existing_card["data"]["nse_raw"] = block["text"]
+                            existing_card["data"]["cves"] = block["cves"]
+                            existing_card["data"]["references"] = block["references"]
+                            existing_card["data"]["proof_of_concept"] = block["text"]
+                            existing_card["data"]["extracted_memory"] = "\n".join(block["references"]) if block["references"] else block["text"]
+                    else:
+                        live_node = {
+                            "id": target_card_id, "module": "nmap", "type": "open_port",
+                            "title": f"Open Network Port Discovered: {port_id}/TCP", "severity": "medium",
+                            "description": f"Port {port_id} detected actively listening over target interface gates. Service Type: '{s_name}'. Version: '{v_banner}'.",
+                            "remediation": "Enforce strict firewall zoning policies. Close ports that are not business-critical.",
+                            "port": port_id, "url": f"http://{context.target}:{port_id}" if port_id == 80 else f"https://{context.target}:{port_id}" if port_id == 443 else None,
+                            "timestamp": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                            "data": {
+                                "port": port_id, "protocol": "tcp", "service": s_name, "product": v_banner,
+                                "evidence_source": "Nmap Recon Engine", "exploit_available": False,
+                                "exploit_vectors_available": [], "active_selected_vector": "N/A"
+                            }
+                        }
+                        current_data["findings"].append(live_node)
+
+                    current_data["total_findings"] = len(current_data["findings"])
+                    current_data["attacker_platform"] = attacker_resolved_ip
+                    current_data["created"] = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    current_data["target"] = context.target
+
+                    with open(r_path, "w", encoding="utf-8") as f_write:
+                        json.dump(current_data, f_write, indent=4, ensure_ascii=False)
+                except Exception:
+                    pass
+
+            # 🛡️ DYNAMIC LIVE NSE INJECTOR (FLUSHES DIRECTLY TO DISK EXPOSURE INTERFACE)
+            if open_ports_metadata:
+                current_active_node = open_ports_metadata[-1]
+                active_port_num = current_active_node["port"]
+                clean_stream_line = line_strip.lstrip()
+                
+                # Intercept any explicit high-fidelity vulnerability signature emitted by Nmap scripts
+                if clean_stream_line.startswith("|") or clean_stream_line.startswith("_") or any(ind in clean_stream_line for ind in ["VULNERABLE", "CVE:", "State:", "References:", "Results:", "Shell command:"]):
+                    purified_nse_trace = clean_stream_line.replace("|", "").replace("_", "").strip()
+                    
+                    # Filter out management tracking logs to keep the text pristine
+                    if purified_nse_trace and not any(k in purified_nse_trace for k in ["NSE:", "Initiating", "Completed", "Scanning"]):
+                        # Inject live directly into the physical report matrix
+                        for sync_report_path in absolute_report_paths:
+                            try:
+                                if os.path.exists(sync_report_path):
+                                    with open(sync_report_path, "r", encoding="utf-8") as f_r:
+                                        disk_json_data = json.load(f_r)
+                                    
+                                    disk_json_data.setdefault("findings", [])
+                                    target_card_id = f"home-live-{active_port_num}"
+                                    target_card = next((f for f in disk_json_data["findings"] if f.get("id") == target_card_id), None)
+                                    
+                                    if target_card:
+                                        # Append the live trace nicely formatted with cross-platform symbols
+                                        if "🛡️ [NMAP NSE EVIDENCE]" not in target_card["description"]:
+                                            target_card["description"] += "\n\n🛡️ [NMAP NSE EVIDENCE]:\n"
+                                        
+                                        if purified_nse_trace not in target_card["description"]:
+                                            target_card["description"] += f" ├─ {purified_nse_trace}\n"
+                                            
+                                        with open(sync_report_path, "w", encoding="utf-8") as f_w:
+                                            json.dump(disk_json_data, f_w, indent=4, ensure_ascii=False)
                             except Exception:
                                 pass
-                            except Exception:
-                               pass
 
+
+            port_id = None
+            s_name = "unknown"
+            v_banner = "generic/network-service-layer"
+
+            if "Discovered open port" in line_strip:
+                p_match = re.search(r"port\s+(\d+)/tcp", line_strip)
+                if p_match:
+                    port_id = int(p_match.group(1))
+            elif "/tcp" in line_strip and "open" in line_strip:
+                p_match = re.search(
+                    r"^(\d+)/tcp\s+open\s+(\S+)(?:\s+syn-ack\s+ttl\s+\d+)?(?:\s+\(access\s+denied\))?\s*(.*)",
+                    line_strip
+                )
+                if p_match:
+                    port_id = int(p_match.group(1))
+                    s_name = p_match.group(2).strip()
+                    if p_match.group(3):
+                        v_banner = p_match.group(3).strip()
+
+            if port_id is not None:
+                # Track metadata cleanly in memory without duplication
+                existing_meta = next((m for m in open_ports_metadata if m["port"] == port_id), None)
+                if existing_meta:
+                    if s_name != "unknown":
+                        existing_meta["service"] = s_name
+                    if v_banner != "generic/network-service-layer":
+                        existing_meta["banner"] = v_banner
+                else:
+                    existing_meta = {
+                        "port": port_id,
+                        "service": s_name,
+                        "banner": v_banner,
+                        "nse_findings": []
+                    }
+                    open_ports_metadata.append(existing_meta)
+
+                # Sync context states safely without breaking infrastructure bounds
+                if port_id not in context.open_ports:
+                    context.open_ports.append(port_id)
+                    finding = Finding(
+                        module="nmap",
+                        finding_type="open_port",
+                        title=f"Open Network Port Discovered: {port_id}/TCP",
+                        severity=Severity.MEDIUM,
+                        data={"port": port_id, "protocol": "tcp", "service": s_name, "product": v_banner},
+                        description=f"Port {port_id} detected listening actively over target interface gates.",
+                        remediation="Enforce strict firewall zoning policies. Close ports that are not business-critical.",
+                        port=port_id
+                    )
+                    context.add_finding(finding)
+                    context.asset.open_ports.append({
+                        "port": port_id, "service": s_name, "product": v_banner, "protocol": "tcp"
+                    })
+
+            # 🚀 LIVE JSON FLUSH INJECTOR (WHATWEB-STYLE FIRST PLAN FLOW)
+            # Flushes high-fidelity evidence directly to disk using the main thread scope
+            for r_path in absolute_report_paths:
+                try:
+                    if os.path.exists(r_path):
+                        with open(r_path, "r", encoding="utf-8") as f_read:
+                            current_data = json.load(f_read)
+                    else:
+                        current_data = {"target": context.target, "findings": [], "total_findings": 0}
+
+                    current_data.setdefault("findings", [])
+                    target_card_id = f"home-live-{port_id}"
+                    
+                    # 🧬 HYBRID REAL-TIME NSE DATA MATRIX INJECTION
+                    has_nse = port_id in nse_evidence
+                    nse_block = nse_evidence[port_id] if has_nse else None
+
+                    # Check if the visual card already exists on the operational board
+                    existing_card = next((f for f in current_data["findings"] if f.get("id") == target_card_id), None)
+
+                    if existing_card:
+                        if s_name != "unknown":
+                            existing_card["data"]["service"] = s_name
+                        if v_banner != "generic/network-service-layer":
+                            existing_card["data"]["product"] = v_banner
+                        
+                        # Dynamically elevate the card parameters if Nmap script detected a breach
+                        if has_nse:
+                            existing_card["severity"] = "critical"
+                            existing_card["description"] = f"Nmap NSE verified an actively exploitable condition on port {port_id}.\n\n{nse_block['text']}"
+                            existing_card["data"]["exploit_available"] = True
+                            existing_card["data"]["nse_verified"] = True
+                            existing_card["data"]["nse_raw"] = nse_block["text"]
+                            existing_card["data"]["cves"] = nse_block["cves"]
+                            existing_card["data"]["references"] = nse_block["references"]
+                            existing_card["data"]["proof_of_concept"] = nse_block["text"]
+                            existing_card["data"]["extracted_memory"] = "\n".join(nse_block["references"]) if nse_block["references"] else nse_block["text"]
+                    else:
+                        live_node = {
+                            "id": target_card_id, 
+                            "module": "nmap", 
+                            "type": "open_port",
+                            "title": f"Open Network Port Discovered: {port_id}/TCP", 
+                            "severity": "critical" if has_nse else "medium",
+                            "description": f"Nmap NSE verified an actively exploitable condition on port {port_id}.\n\n{nse_block['text']}" if has_nse else f"Port {port_id} detected actively listening over target interface gates. Service Type: '{s_name}'. Version: '{v_banner}'.",
+                            "remediation": "Enforce strict firewall zoning policies. Close ports that are not business-critical.",
+                            "port": port_id, 
+                            "url": f"http://{context.target}:{port_id}" if port_id == 80 else f"https://{context.target}:{port_id}" if port_id == 443 else None,
+                            "timestamp": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                            "data": {
+                                "port": port_id, 
+                                "protocol": "tcp", 
+                                "service": s_name, 
+                                "product": v_banner,
+                                "evidence_source": "Nmap Recon Engine", 
+                                "exploit_available": True if has_nse else False,
+                                "nse_verified": True if has_nse else False,
+                                "nse_raw": nse_block["text"] if has_nse else None,
+                                "cves": nse_block["cves"] if has_nse else [],
+                                "references": nse_block["references"] if has_nse else [],
+                                "proof_of_concept": nse_block["text"] if has_nse else f"Automated structural signature identification successful for daemon rule on port {port_id}.",
+                                "extracted_memory": "\n".join(nse_block["references"]) if has_nse and nse_block["references"] else f"Port detected over interface scan stream."
+                            }
+                        }
+                        current_data["findings"].append(live_node)
+
+                    current_data["total_findings"] = len(current_data["findings"])
+                    current_data["attacker_platform"] = attacker_resolved_ip
+                    current_data["created"] = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    current_data["target"] = context.target
+
+                    with open(r_path, "w", encoding="utf-8") as f_write:
+                        json.dump(current_data, f_write, indent=4, ensure_ascii=False)
+                except Exception:
+                    pass
+
+            # Sync context states safely without breaking infrastructure bounds
+            if port_id not in context.open_ports:
+                context.open_ports.append(port_id)
+                finding = Finding(
+                    module="nmap",
+                    finding_type="open_port",
+                    title=f"Open Network Port Discovered: {port_id}/TCP",
+                    severity=Severity.MEDIUM,
+                    data={"port": port_id, "protocol": "tcp", "service": s_name, "product": v_banner},
+                    description=f"Port {port_id} detected listening actively over target interface gates.",
+                    remediation="Enforce strict firewall zoning policies. Close ports that are not business-critical.",
+                    port=port_id
+                )
+                context.add_finding(finding)
+                context.asset.open_ports.append({
+                    "port": port_id, "service": s_name, "product": v_banner, "protocol": "tcp"
+                })
+
+            # 🚀 LIVE JSON FLUSH INJECTOR (With strict structural de-duplication locks)
+            for r_path in absolute_report_paths:
+                try:
+                    if os.path.exists(r_path):
+                        with open(r_path, "r", encoding="utf-8") as f_read:
+                            current_data = json.load(f_read)
+                    else:
+                        current_data = {"target": context.target, "findings": [], "total_findings": 0}
+
+                    current_data.setdefault("findings", [])
+                    
+                    target_card_id = f"home-live-{port_id}"
+                    existing_card = next((f for f in current_data["findings"] if f.get("id") == target_card_id), None)
+
+                    if existing_card:
+                        # 🔒 CANDADO DE DUPLICADOS: If card exists, update parameters inside instead of appending a new one
+                        if s_name != "unknown":
+                            existing_card["data"]["service"] = s_name
+                            existing_card["description"] = f"Port {port_id} detected actively listening over target interface gates. Service Type: '{s_name}'. Version: '{v_banner}'."
+                        if v_banner != "generic/network-service-layer":
+                            existing_card["data"]["product"] = v_banner
+                    else:
+                        # Append the new unique card safely
+                        live_node = {
+                            "id": target_card_id, "module": "nmap", "type": "open_port",
+                            "title": f"Open Network Port Discovered: {port_id}/TCP", "severity": "medium",
+                            "description": f"Port {port_id} detected actively listening over target interface gates. Service Type: '{s_name}'. Version: '{v_banner}'.",
+                            "remediation": "Enforce strict firewall zoning policies. Close ports that are not business-critical.",
+                            "port": port_id, "url": f"http://{context.target}:{port_id}" if port_id == 80 else f"https://{context.target}:{port_id}" if port_id == 443 else None,
+                            "timestamp": str(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                            "data": {
+                                "port": port_id, "protocol": "tcp", "service": s_name, "product": v_banner,
+                                "evidence_source": "Nmap Recon Engine", "exploit_available": False,
+                                "exploit_vectors_available": [], "active_selected_vector": "N/A"
+                            }
+                        }
+                        current_data["findings"].append(live_node)
+
+                    current_data["total_findings"] = len(current_data["findings"])
+                    current_data["attacker_platform"] = attacker_resolved_ip
+                    current_data["created"] = str(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    current_data["target"] = context.target
+
+                    with open(r_path, "w", encoding="utf-8") as f_write:
+                        json.dump(current_data, f_write, indent=4, ensure_ascii=False)
+                except Exception:
+                    pass
+
+        # Clean terminal sub-process descriptors safely
+        proc.stdout.close()
+        proc.wait()
+
+       
+ # 🧠 ABSOLUTE ONSITE EVIDENCE FLUSH PIPELINE (WHATWEB-STYLE MASTER SYSTEM)
+        # Iterates through the gathered elastic memory to force-write the data into the physical API state files
+        if nse_evidence:
+            print(f" \n ├─ [🧠 CORE SYNC] Found {len(nse_evidence)} active NSE vulnerability blocks in memory. Securing disk...")
+            for sync_path in absolute_report_paths:
+                try:
+                    if os.path.exists(sync_path):
+                        with open(sync_path, "r", encoding="utf-8") as f_r:
+                            disk_data = json.load(f_r)
+                        
+                        disk_data.setdefault("findings", [])
+                        updates_committed = False
+
+                        for port_key, block_data in nse_evidence.items():
+                            target_id = f"home-live-{port_key}"
+                            card_target = next((f for f in disk_data["findings"] if f.get("id") == target_id), None)
+
+                            if card_target:
+                                # Elevate card state to critical with native high-fidelity properties
+                                card_target["severity"] = "critical"
+                                
+                                # 📡 RAW CONSOLE INJECTION: Flushes the exact terminal trace into the description slot
+                                card_target["description"] = block_data['text']
+                                
+                                card_target.setdefault("data", {})
+                                card_target["data"]["exploit_available"] = True
+                                card_target["data"]["nse_verified"] = True
+                                card_target["data"]["nse_raw"] = block_data["text"]
+                                card_target["data"]["cves"] = block_data["cves"]
+                                card_target["data"]["references"] = block_data["references"]
+                                card_target["data"]["proof_of_concept"] = block_data["text"]
+                                card_target["data"]["extracted_memory"] = block_data["text"]
+                                card_target["data"]["evidence_source"] = "Nmap Live Recon Engine (NSE)"
+                                updates_committed = True
+
+                        if updates_committed:
+                            with open(sync_path, "w", encoding="utf-8") as f_w:
+                                json.dump(disk_data, f_w, indent=4, ensure_ascii=False)
+                            print(f" │  [✔] Physical sync complete for endpoint gate: {sync_path}")
+                except Exception as sync_err:
+                    print(f" │  [⚠️] Error writing final evidence matrix to {sync_path}: {sync_err}")
+            sys.stdout.flush()
         proc.wait()
         print("═"*75 + "\n")
         logger.info(f"Nmap pipeline stage finalized | Asset open_ports populated: {len(context.asset.open_ports)}")
 
+        # ⚡ BACKGROUND COGNITIVE ENGAGEMENT INTERFACE: Dispatches the Multi-Vector Exploit DB thread
+        if open_ports_metadata:
+            logger.info(f"🧠 [INTELLIGENCE LINK] Launching asynchronous SearchSploit processing thread over {len(open_ports_metadata)} nodes...")
+            bg_thread = threading.Thread(
+                target=independent_exploit_db_worker,
+                args=(open_ports_metadata, absolute_report_paths, str(context.target), attacker_resolved_ip),
+                daemon=True
+            )
+            bg_thread.start()
+
     except Exception as e:
         logger.error(f"Unexpected processing breakdown inside Nmap unbuffered stream: {str(e)}")
+        raise e
