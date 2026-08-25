@@ -1689,25 +1689,26 @@ function updateAttackReplay(reportData) {
     if (!Array.isArray(rawFindings) && reportData.module) { rawFindings = [rawFindings]; }
     if (!rawFindings || rawFindings.length === 0) return;
     
-    // 🔍 Filtrar duplicados de Nmap en tiempo real
+    // 🔍 Filtrar duplicados simples sin alterar el orden nativo
     const findingsMap = {};
     rawFindings.forEach(f => {
         if (!f) return;
-        const portKey = f.port ? String(f.port) : null;
-        const isDiscover = String(f.title || "").toLowerCase().includes("discover");
-        if (portKey) {
-            if (!findingsMap[portKey] || (findingsMap[portKey] && !isDiscover)) {
-                findingsMap[portKey] = f;
-            }
-        } else {
-            const uniqueKey = f.title || f.finding || Math.random().toString();
-            findingsMap[uniqueKey] = f;
-        }
+        const uniqueKey = f.id || (String(f.module || "") + "-" + String(f.port || "") + "-" + (f.title || f.finding || ""));
+        findingsMap[uniqueKey] = f;
     });
-    const findings = Object.values(findingsMap);
+    
+    // Extraer los hallazgos en bruto
+    let findings = Object.values(findingsMap);
+
+    // ⏳ CLAVE DEL ÉXITO: Forzar ordenamiento cronológico estricto por la marca de tiempo (timestamp)
+    findings.sort((a, b) => {
+        let timeA = a.timestamp ? new Date(String(a.timestamp).replace("T", " ")) : 0;
+        let timeB = b.timestamp ? new Date(String(b.timestamp).replace("T", " ")) : 0;
+        return timeA - timeB; // Ordena cronológicamente conforme se descubrieron en el tiempo
+    });
 
     // 1. Horizontal Phase Indicators
-    const activeModules = new Set(findings.map(f => String(f.module || f.name || "").toLowerCase()));
+    const activeModules = new Set(rawFindings.map(f => String(f.module || f.name || "").toLowerCase()));
     const activePhases = new Set();
     if (activeModules.has("nmap") || activeModules.has("iot_scan")) activePhases.add(1);
     if (activeModules.has("httpx") || activeModules.has("whatweb")) activePhases.add(2);
@@ -1715,7 +1716,6 @@ function updateAttackReplay(reportData) {
     if (activeModules.has("gobuster") || activeModules.has("ffuf")) activePhases.add(4);
     if (activeModules.has("nuclei") || activeModules.has("searchsploit")) activePhases.add(5);
     if (activeModules.has("attack_story")) activePhases.add(6);
-    if (activePhases.size === 0) activePhases.add(1);
 
     const phaseNames = { 1: "RECON", 2: "VALID", 3: "MAPP", 4: "ENUM", 5: "VULN", 6: "CORR" };
     for (let i = 1; i <= 6; i++) {
@@ -1737,7 +1737,7 @@ function updateAttackReplay(reportData) {
     const lastFinding = findings[findings.length - 1];
     if (lastFinding) {
         const rawModule = String(lastFinding.module || lastFinding.name || "NMAP").toUpperCase();
-        const title = lastFinding.title || lastFinding.finding || "Processing target infrastructure...";
+        const title = lastFinding.title || lastFinding.finding || "Processing targets...";
         const textEl = document.getElementById("replay-last-event-text");
         if (textEl) textEl.innerHTML = `<span style="color: #00ffff !important; font-weight: bold;">[${rawModule}]</span> ${title}`;
         const statusEl = document.getElementById("replay-status");
@@ -1747,41 +1747,62 @@ function updateAttackReplay(reportData) {
         }
     }
 
-    // 3. SOC Mission Timeline - Clean Injected Generation
+    // 3. SOC Mission Timeline - Direct Real-Time Order Stream
     const timelineContainer = document.getElementById("soc-mission-timeline");
     if (timelineContainer) {
         let timelineHtml = "";
         
         findings.forEach((finding, index) => {
-            let timeStr = "LIVE";
-            if (finding.timestamp) {
-                if (finding.timestamp.includes("T")) timeStr = finding.timestamp.split("T")[1].split(".")[0];
-                else if (finding.timestamp.includes(" ")) timeStr = finding.timestamp.split(" ")[1];
-                else timeStr = finding.timestamp;
-            }
+            if (!finding) return;
             
             const mod = String(finding.module || finding.name || "CORE").toUpperCase();
+            const sev = String(finding.severity || "info").toLowerCase();
             const msg = finding.title || finding.finding || "Security event registered.";
+            const discoveredUrl = finding.url || finding.evidence || finding.target || "";
             
-            let badgeColor = "#00ffff"; 
-            const sev = String(finding.severity || "").toLowerCase();
-            if (sev === "medium") badgeColor = "#ffff00"; 
-            if (sev === "high") badgeColor = "#ffaa00";   
-            if (sev === "critical") badgeColor = "#ff3333"; 
-
-            // Base64 encoding prevent XML/HTML syntax braking during quotes escaping
-            const base64Msg = btoa(unescape(encodeURIComponent(msg)));
+            let timeStr = "LIVE";
+            if (finding.timestamp) {
+                const rawTime = String(finding.timestamp);
+                if (rawTime.includes("T")) {
+                    const tPart = rawTime.split("T")[1] || "";
+                    timeStr = tPart.split(".")[0] || "LIVE";
+                } else if (rawTime.includes(" ")) {
+                    timeStr = rawTime.split(" ")[1] || "LIVE";
+                } else {
+                    timeStr = rawTime;
+                }
+            }
+            
+            let displayMsg = msg;
+            if (discoveredUrl && !displayMsg.includes("http") && (discoveredUrl.startsWith("http") || discoveredUrl.includes("/"))) {
+                displayMsg = displayMsg + " ──> [Path: " + discoveredUrl + "]";
+            }
+            
+            // 🚨 SISTEMA DE COLORES ESTRICTO POR IMPACTO EN VIVO
+            let badgeColor = "#ffff00"; // Amarillo Neón de Nmap por defecto para Medium
+            let textColor = "#ffffff";
+            let textGlow = "none";
+            
+            if (sev === "critical" || sev === "high" || msg.toLowerCase().includes("critical") || msg.toLowerCase().includes("exposure")) {
+                badgeColor = "#ff3333"; // Rojo Neón Brillante para Críticos
+                textColor = "#ff3333";
+                textGlow = "0 0 8px rgba(255, 51, 51, 0.6)";
+            } else if (sev === "info" || sev === "low") {
+                badgeColor = "#00ffff"; // Cyan para informativos
+            }
 
             timelineHtml += `
-                <div style="display: flex; margin-bottom: 6px; font-family: 'Courier New', monospace; border-left: 2px solid #39ff14; padding-left: 10px; align-items: center;">
+                <div style="display: flex; margin-bottom: 6px; font-family: 'Courier New', monospace; border-left: 2px solid ${badgeColor}; padding-left: 10px; align-items: center;">
                     <span style="color: #888888; margin-right: 15px; font-size: 0.8rem;">[${timeStr}]</span>
                     <span style="color: ${badgeColor}; font-weight: bold; margin-right: 15px; min-width: 80px; display: inline-block;">[${mod}]</span>
                     <a href="#finding-card-${index}" 
-                       onclick="return cyberScrollToFinding('${base64Msg}', ${index});"
-                       style="color: #ffffff; text-decoration: none; border-bottom: 1px dotted #444444; transition: all 0.2s;" 
-                       onmouseover="this.style.color='#39ff14'; this.style.borderBottom='1px solid #39ff14'; this.style.paddingLeft='5px';" 
-                       onmouseout="this.style.color='#ffffff'; this.style.borderBottom='1px dotted #444444'; this.style.paddingLeft='0px';">
-                       ${msg} ── <span style="color: #555555; font-size: 0.75rem;">[ Jump to Evidence ]</span>
+                       data-index="${index}"
+                       data-title="${btoa(unescape(encodeURIComponent(msg)))}"
+                       onclick="return cyberScrollToFinding(this);"
+                       style="color: ${textColor}; text-shadow: ${textGlow}; text-decoration: none; border-bottom: 1px dotted #444444; transition: all 0.2s;" 
+                       onmouseover="this.style.color='#39ff14'; this.style.borderBottom='1px solid #39ff14';" 
+                       onmouseout="this.style.color='${textColor}'; this.style.borderBottom='1px dotted #444444';">
+                       ${displayMsg} ── <span style="color: #555555; font-size: 0.75rem;">[ Jump to Evidence ]</span>
                     </a>
                 </div>
             `;
@@ -1792,40 +1813,35 @@ function updateAttackReplay(reportData) {
 }
 
 
-function cyberScrollToFinding(base64Title, fallbackIndex) {
+function cyberScrollToFinding(anchorElement) {
     try {
-        // Descodificar el título de forma segura
+        if (!anchorElement) return false;
+        const fallbackIndex = anchorElement.getAttribute("data-index");
+        const base64Title = anchorElement.getAttribute("data-title");
         const realTitle = decodeURIComponent(escape(atob(base64Title)));
         let targetEl = null;
 
-        // 1. PUNTERÍA EXACTA: Buscar coincidencia estricta en los encabezados H3 de las tarjetas de abajo
+        // 1. Precise Match on H3 headers inside target cards
         const headers = document.querySelectorAll("h3");
         for (let h3 of headers) {
-            // Ignorar elementos dentro del menú superior si los hubiera
             if (h3.closest("#soc-mission-timeline")) continue;
-            
-            // Si el encabezado h3 contiene exactamente el nombre completo del hallazgo (ej: "Open Network Port Discovered: 80/TCP")
             if (h3.textContent.includes(realTitle) || (h3.innerText && h3.innerText.includes(realTitle))) {
-                // Escalamos al contenedor principal de la tarjeta con tu clase .security-card
                 targetEl = h3.closest(".security-card") || h3.parentElement;
                 break;
             }
         }
 
-        // 2. Fallback de respaldo por índice numérico si el título cambió dinámicamente
+        // 2. Numerical Index Fallback Tracker
         if (!targetEl) {
-            targetEl = document.getElementById(`finding-card-${fallbackIndex}`) || document.getElementById(`finding-target-${fallbackIndex}`);
+            targetEl = document.getElementById("finding-card-" + fallbackIndex) || document.getElementById("finding-target-" + fallbackIndex);
         }
 
-        // 3. Ejecutar el desplazamiento y el destello táctico de confirmación
+        // 3. Automated Smooth Autoscroll Animation Execution
         if (targetEl) {
             targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
-            
-            // Destello blanco/neón para identificarlo con precisión de un vistazo
             const originalBorder = targetEl.style.borderColor || "rgba(57, 255, 20, 0.3)";
             targetEl.style.setProperty("border-color", "#ffffff", "important");
             targetEl.style.setProperty("box-shadow", "0 0 25px #ffffff", "important");
-            
             setTimeout(() => {
                 targetEl.style.borderColor = originalBorder;
                 targetEl.style.removeProperty("box-shadow");
@@ -1834,8 +1850,9 @@ function cyberScrollToFinding(base64Title, fallbackIndex) {
     } catch (err) {
         console.error("Fusion-AI Core Engine Autoscroll Exception: ", err);
     }
-    return false; // Bloquear comportamiento de recarga nativo
+    return false;
 }
+
 
 
 </script>
