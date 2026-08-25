@@ -21,12 +21,20 @@ from core.types import ScanContext, Finding, Severity
 
 logger = logging.getLogger("FusionEngine.Modules.Nmap")
 
-# CONEXIÓN COGNITIVA: Importamos el motor de la historia ejecutiva
+# ===========================
+# 🧠 CONEXIÓN COGNITIVA: Executive Intelligence Engines
+# ===========================
+
 try:
-    from intelligence.attack_story import build_attack_story
+    from modules.attack_story.module import run_story_pipeline as build_attack_story
 except ImportError:
     build_attack_story = None
 
+try:
+    # 🚀 REAL FIX: Importing the correct functional entry point from module schema
+    from modules.attack_replay.module import build_attack_replay
+except ImportError:
+    build_attack_replay = None
 def upsert_live_card(findings, card):
     """
     ADVANCED NORMALIZATION & DE-DUPLICATION ENGINE v4.0 - LAYER 2 MAC LOCK
@@ -823,10 +831,48 @@ def run(context: ScanContext) -> None:
             )
             bg_thread.start()
 
-        # 🚀 THE COGNITIVE MASTER ENGAGEMENT: Compila la Attack Story ejecutiva al cerrar el flujo de red
-        if build_attack_story is not None:
-            logger.info("[🧠 EXECUTIVE INTELLIGENCE] Compiling corporate narrative timeline via Attack Story Engine...")
-            build_attack_story("/home/kali/Fusion-AI/outputs/json/report.json")
+        # 🚀 THE COGNITIVE MASTER ENGAGEMENT: Asynchronous Live Intelligence Loop (M.F.B. STABLE FIXED)
+        # Guarantees synchronous orchestration for both Attack Story and Executive Replay pipelines
+        def attack_story_live_loop():
+            logger.info("[🧠 IA ENGINE ACTIVE] Launching background narrative thread for real-time updates...")
+            
+            # Explicitly import both operational modules to guarantee local namespace resolution
+            try:
+                from modules.attack_story.module import run_story_pipeline
+            except ImportError:
+                run_story_pipeline = None
+                logger.error("[-] Failed to import run_story_pipeline from attack_story module.")
+
+            try:
+                from modules.attack_replay.module import build_attack_replay
+            except ImportError:
+                build_attack_replay = None
+                logger.error("[-] Failed to import build_attack_replay from attack_replay module.")
+
+            while True:
+                try:
+                    # Target metadata identification token
+                    active_target_str = str(context.target)
+
+                    # 1. EXECUTE AUTONOMOUS ATTACK STORY ROUTINE
+                    if run_story_pipeline is not None:
+                        logger.info("[🛰️] Triggering attack story narrative compiler task...")
+                        run_story_pipeline(active_target_str)
+                    
+                    # 2. EXECUTE EXECUTIVE ATTACK REPLAY ROUTINE
+                    if build_attack_replay is not None:
+                        logger.info("[🎬] Triggering executive attack replay timeline task...")
+                        build_attack_replay(context)
+
+                except Exception as core_loop_error:
+                    logger.error(f"[-] Operational breakdown inside intelligence background pipeline: {str(core_loop_error)}")
+                
+                # Balanced sleep interval window to reduce disk resource contention
+                time.sleep(90)
+
+        # Deploy persistent background orchestration daemon thread
+        story_thread = threading.Thread(target=attack_story_live_loop, daemon=True)
+        story_thread.start()
 
     except Exception as e:
         logger.error(f"Unexpected processing breakdown inside Nmap unbuffered stream: {str(e)}")
