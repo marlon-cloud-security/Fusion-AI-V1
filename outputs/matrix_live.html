@@ -558,6 +558,27 @@ border:1px solid var(--border-neon);
         </div>
     </div>
 
+    <!-- FUSION-AI // UNIFIED WEB PATHS & SECONDARY ATTACK VECTORS (COLLAPSIBLE) -->
+    <div id="unified-attack-vectors-card" style="display: none; margin-top: 30px; margin-bottom: 30px; border: 1px solid #ff3333; background: #070710; box-shadow: 0 0 15px rgba(255, 51, 51, 0.2); font-family: 'Courier New', monospace; padding: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ff3333; padding-bottom: 8px; margin-bottom: 15px;">
+            <span style="color: #ff3333; font-weight: bold; letter-spacing: 2px; font-size: 1.1rem;">🛡️ OTHER ATTACK VECTORS & WEBPATH EXPOSURES</span>
+            
+            <!-- Botón Táctico de Apertura / Cierre Dinámico -->
+            <button id="toggle-vectors-btn" onclick="toggleVectorsWindow();" style="background: rgba(255,51,51,0.1); color: #ff3333; border: 1px solid #ff3333; padding: 4px 12px; font-family: monospace; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-weight: bold;">
+                [▼ COLLAPSE PANEL]
+            </button>
+        </div>
+        
+        <p style="color: #888888; font-size: 0.85rem; margin-bottom: 15px;">
+            The following architectural exposure vectors and endpoints were harvested during deep directory web crawling synchronization loops.
+        </p>
+        
+        <!-- Pantalla de Log Principal -->
+        <div id="vectors-log-screen" style="display: block; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,51,51,0.3); padding: 15px; max-height: 280px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; color: #ffffff;">
+            <!-- JavaScript inyectará aquí los sub-paths en tiempo real -->
+        </div>
+    </div>
+
         <h2 style="color: var(--neon-cyan); border-bottom: 1px solid var(--border-neon); padding-bottom: 8px;">🛡️ SECURITY TARGET EXPLORATION REVELATIONS</h2>
         <div class="cards-container">
 
@@ -1809,6 +1830,53 @@ function updateAttackReplay(reportData) {
         });
         
         timelineContainer.innerHTML = timelineHtml;
+    // 🔍 MOTOR DE EXTRACCIÓN AUTOMÁTICA CON SOPORTE COLAPSABLE RETENIDO
+    const vectorsContainer = document.getElementById("unified-attack-vectors-card");
+    const logScreen = document.getElementById("vectors-log-screen");
+    const btnControl = document.getElementById("toggle-vectors-btn");
+
+    if (vectorsContainer && logScreen && btnControl) {
+        let vectorsHtml = "";
+        let totalVectors = 0;
+
+        rawFindings.forEach(f => {
+            if (!f) return;
+            const moduleName = String(f.module || f.name || "").toUpperCase();
+            const pathUrl = f.url || f.evidence || f.target || "";
+
+            if ((moduleName === "KATANA" || moduleName === "GOBUSTER" || moduleName === "FFUF") && pathUrl) {
+                const lowUrl = pathUrl.toLowerCase();
+                if (lowUrl.endsWith(".png") || lowUrl.endsWith(".jpg") || lowUrl.endsWith(".css") || lowUrl.endsWith(".js") || lowUrl.endsWith(".svg") || lowUrl.endsWith(".woff") || lowUrl.endsWith(".woff2")) {
+                    return; 
+                }
+                totalVectors++;
+                vectorsHtml += `
+                    <div style="margin-bottom: 6px; border-bottom: 1px dashed rgba(255,51,51,0.1); padding-bottom: 4px; display: flex; align-items: center; font-size: 0.85rem;">
+                        <span style="color: #ff3333; margin-right: 15px; font-weight: bold;">[${moduleName}]</span>
+                        <span style="color: #888888; margin-right: 15px;">├─→ VIA PORT ${f.port || '80'}:</span>
+                        <span style="color: #00ffff; font-family: monospace; word-break: break-all;">${pathUrl}</span>
+                        <span style="margin-left: auto; color: #ffcc00; font-size: 0.75rem; background: rgba(255,204,0,0.1); padding: 1px 5px; border: 1px solid rgba(255,204,0,0.2);">EXPOSED</span>
+                    </div>
+                `;
+            }
+        });
+
+        if (totalVectors > 0) {
+            logScreen.innerHTML = vectorsHtml;
+            vectorsContainer.style.display = "block";
+            
+            if (vectorsPanelCollapsed) {
+                logScreen.style.display = "none";
+                btnControl.innerText = "[▶ EXPAND VECTORS (" + totalVectors + ")]";
+            } else {
+                logScreen.style.display = "block";
+                btnControl.innerText = "[▼ COLLAPSE VECTORS (" + totalVectors + ")]";
+            }
+        } else {
+            vectorsContainer.style.display = "none";
+        }
+    }
+
     }
 }
 
@@ -1853,6 +1921,32 @@ function cyberScrollToFinding(anchorElement) {
     return false;
 }
 
+
+// Variable global táctica para retener el estado de la ventana elegido por el operador
+let vectorsPanelCollapsed = false;
+
+function toggleVectorsWindow() {
+    const screen = document.getElementById("vectors-log-screen");
+    const btn = document.getElementById("toggle-vectors-btn");
+    if (!screen || !btn) return;
+    
+    // Invertir el estado manual de la persiana
+    vectorsPanelCollapsed = !vectorsPanelCollapsed;
+    
+    if (vectorsPanelCollapsed) {
+        screen.style.display = "none";
+        btn.innerText = "[▶ EXPAND PANEL]";
+        btn.style.borderColor = "#00ffff";
+        btn.style.color = "#00ffff";
+        btn.style.background = "rgba(0,255,255,0.1)";
+    } else {
+        screen.style.display = "block";
+        btn.innerText = "[▼ COLLAPSE PANEL]";
+        btn.style.borderColor = "#ff3333";
+        btn.style.color = "#ff3333";
+        btn.style.background = "rgba(255,51,51,0.1)";
+    }
+}
 
 
 </script>
