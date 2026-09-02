@@ -14,7 +14,7 @@ import os
 import json
 import threading
 from datetime import datetime
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
 HOST = "127.0.0.1"
@@ -366,7 +366,7 @@ def run_server(host_ip="127.0.0.1", port_num=8000):
  CORS Control:    ENABLED [HTTP/WS Matrix Sync]
     """)
     try:
-        server = HTTPServer((host_ip, port_num), FusionAPIHandler)
+        server = ThreadingHTTPServer((host_ip, port_num), FusionAPIHandler)
         server.serve_forever()
     except Exception:
         pass

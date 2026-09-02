@@ -16,6 +16,7 @@ import webbrowser
 import time
 import subprocess  
 import shutil      
+import re
 from datetime import datetime
 from core.engine import FusionEngine
 from core.plugin_loader import PluginLoader
@@ -133,8 +134,6 @@ def spawn_api_server_multi_terminal():
     # ⏱️ TIME BUFFER & HEALTH CHECK HANDSHAKE
     print(" [*] SYSTEM BUFFER: Synchronizing multi-protocol service interfaces, please wait...")
     time.sleep(2)
-
-
 def main():
     # 🚀 LIVE INITIALIZATION HANDSHAKE: Fires your signature brand layout right at the ignition point!
     print_neon_banner()
@@ -174,8 +173,7 @@ def main():
     # Automatically discover and register all plugin modules from the modules tree
     loader.load_plugins(engine)
 
-    # 🎛️ MULTI-MODAL OPERATION PROFILE SELECTION MATRIX (RE-STYLIZED NUMERATION)
-    print("\nSelect the type of audit:")
+    print(" [0] Wireless Infrastructure & Wi-Fi Discovery")
     print(" [1] Web Application Assessment")
     print(" [2] API Security Audit")
     print(" [3] Internal Corporate Network Scan")
@@ -183,6 +181,7 @@ def main():
     print(" [5] Cloud Infrastructure Assessment")
     print(" [6] Active Directory Security Audit")
     print(" [7] IoT Autonomous Grid Assessment")
+    print(" [8] Wireless Offensive Matrix (Pure Wi-Fi Attack & Cracking)")
     print("-" * 60)
     
     try:
@@ -201,10 +200,87 @@ def main():
 
     # Capture the operational target via a clean unattended-ready input stream
     try:
-        target = input("\nEnter target infrastructure (IP or Domain): ").strip()
+        target = input(
+            "\nEnter target infrastructure (IP or Domain) "
+            "[0 = Wi-Fi Discovery]: "
+        ).strip()
+
     except (KeyboardInterrupt, EOFError):
         print("\n[-] Operational cancellation received. Aborting.")
         sys.exit(0)
+    # ================================================================
+    # WIRELESS OPERATIONS CORE (OPTIONS 0 & 8)
+    # ================================================================
+    if target == "0" or choice == "8":
+
+        print("\n" + "═" * 60)
+        print(" 📡 FUSION-AI // WIRELESS OPERATIONAL SUB-MATRIX")
+        print("═" * 60)
+
+        try:
+            from modules.wifi_discovery import module as wifi_discovery
+            # Le pasamos el 'choice' original para que el módulo sepa si va en modo híbrido (0) u ofensivo (8)
+            wifi_result = wifi_discovery.run(mode=choice)
+
+        except Exception as e:
+            print(f"\n[❌] Wi-Fi operational module failed: {e}")
+            sys.exit(1)
+
+        if not wifi_result.get("available"):
+            print("\n[⚠] No wireless interface detected.")
+            print("[i] Connect a compatible Wi-Fi adapter to Kali.")
+            print("[i] VirtualBox must expose the adapter to the guest.")
+            print("\n[-] Returning to target selection.")
+            sys.exit(0)
+
+        selected = wifi_result.get("selected_network")
+        local_network = wifi_result.get("local_network") or {}
+        active_network = wifi_result.get("active_network")
+
+        print("\n[+] Wireless interface detected.")
+
+        for interface in wifi_result.get("interfaces", []):
+            print(
+                f"    Interface : {interface.get('name')}"
+                f" | Type: {interface.get('type')}"
+                f" | MAC: {interface.get('mac')}"
+            )
+
+        if active_network:
+            print(
+                f"\n[+] Active connection: "
+                f"{active_network.get('connection')}"
+            )
+
+        if local_network.get("ip"):
+            print(f"[+] Local IP : {local_network['ip']}")
+
+        if local_network.get("gateway"):
+            print(f"[+] Gateway  : {local_network['gateway']}")
+
+        if selected:
+            print("\n[+] Authorized network selected:")
+            print(f"    SSID   : {selected.get('ssid')}")
+            print(f"    BSSID  : {selected.get('bssid')}")
+            print(f"    Channel: {selected.get('channel')}")
+            print(f"    Signal : {selected.get('signal')}")
+            print(f"    Security: {selected.get('security')}")
+
+        # 🚀 ELITE COGNITIVE TARGET RESOLVER
+        # Si el módulo Wi-Fi resolvió un objetivo dinámico o el operador seleccionó una red,
+        # lo adoptamos de inmediato de forma agnóstica sin requerir direccionamiento DHCP del host.
+        target = wifi_result.get("target")
+
+        if not target:
+            print("\n[⚠] Wireless Exploration Matrix: No routing targets defined by module.")
+            print("[i] Injecting diagnostic loopback target to maintain pipeline continuum.")
+            target = "127.0.0.1"
+
+        print(f"\n[🎯] Pipeline target resolved for Fusion core: {target}")
+    # ================================================================
+    # NORMAL MODE
+    # IP / DOMAIN continues through the existing pipeline.
+    # ================================================================
 
     if not target:
         # 🚀 INTELLIGENT DYNAMIC DEFAULTS CONTEXT CALCULATION (ZERO HARDCODED PARAMETERS)
@@ -221,6 +297,7 @@ def main():
         except Exception:
             target = "127.0.0.1"
         print(f"Using default infrastructure sandbox target: {target}")
+
     # 🚀 LIVE INTERACTIVE IGNITION: Dispatches the default browser right as the scan begins!
     print("[*] CONTROL GATEWAY -> Dispatched automatic browser initialization thread...")
     trigger_automated_browser_gateway()

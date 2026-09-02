@@ -1247,7 +1247,10 @@ if (ui.expandable) {
                 <div style="color:var(--cyan); font-family: monospace; word-break: break-all;">${matchedUrl}</div>
                 <br>
                 <div class="data-label">VULNERABILITY MATRIX DESCRIPTION:</div>
-                <div>${description}</div>
+                <div>${description.replace(
+                    /\bCVE-\d{4}-\d{4,7}\b/gi,
+                    cve => `<a href="https://www.cve.org/CVERecord?id=${encodeURIComponent(cve.toUpperCase())}" target="_blank" rel="noopener noreferrer" style="color:#00ffff;font-weight:bold;text-decoration:none;border-bottom:1px solid #00ffff;">${cve.toUpperCase()} ↗</a>`
+                )}</div>
                 <br>
                 <div class="data-label">LIVE VERIFICATION METHOD (PROOF OF CONCEPT):</div>
                 <div class="terminal-block cmd-block" style="font-family: monospace;">${curlProof}</div>
@@ -1704,6 +1707,7 @@ async function executeMitigationPipeline() {
 }
 
 
+
 function updateAttackReplay(reportData) {
     if (!reportData) return;
     let rawFindings = reportData.findings || reportData.events || reportData.history || [];
@@ -1830,7 +1834,13 @@ function updateAttackReplay(reportData) {
         });
         
         timelineContainer.innerHTML = timelineHtml;
-    // 🔍 MOTOR DE EXTRACCIÓN AUTOMÁTICA CON SOPORTE COLAPSABLE RETENIDO
+    }
+
+    // ============================================================================
+    // 🛡️ OTHER ATTACK VECTORS & WEBPATH EXPOSURES
+    // Universal evidence extractor for Katana / Gobuster / FFUF
+    // Does NOT modify the original findings.
+    // ============================================================================
     const vectorsContainer = document.getElementById("unified-attack-vectors-card");
     const logScreen = document.getElementById("vectors-log-screen");
     const btnControl = document.getElementById("toggle-vectors-btn");
@@ -1839,32 +1849,180 @@ function updateAttackReplay(reportData) {
         let vectorsHtml = "";
         let totalVectors = 0;
 
+        // 🚀 AISLAMIENTO DE MEMORIA CARDINAL: Evita colisiones de deduplicación con el Timeline superior
+        const vectorsUniqueSeen = new Set();
+
+        function collectFindingStrings(value, results = []) {
+            if (value === null || value === undefined) return results;
+            if (typeof value === "string") { results.push(value); return results; }
+            if (Array.isArray(value)) { value.forEach(item => collectFindingStrings(item, results)); return results; }
+            if (typeof value === "object") { Object.keys(value).forEach(key => { collectFindingStrings(value[key], results); }); }
+            return results;
+        }
+
+        function extractUrls(text) {
+            if (!text || typeof text !== "string") return [];
+            const matches = text.match(/https?:\/\/[^\s"'<>`\]\[)]+/gi);
+            return matches || [];
+        }
+
+        function extractPaths(text) {
+            if (!text || typeof text !== "string") return [];
+            
+            // 🛑 CORRECCIÓN DE BASURA LOCAL: Ignorar logs que contengan carpetas de diccionarios del SO de Kali
+            if (text.includes("/usr/") || text.includes("/share/") || text.includes("dirb") || text.includes("wordlists")) {
+                return [];
+            }
+            const matches = text.match(/\/[A-Za-z0-9._~:@!$&'()*+,;=%\-\/?#[\]]+/g);
+            return matches || [];
+        }
+
+        function normalizeVector(rawValue) {
+            if (!rawValue || typeof rawValue !== "string") return null;
+            let value = rawValue.trim();
+
+            value = value.replace(/\[Status:\s*\d+\]/gi, "").replace(/\[Size:\s*\d+\]/gi, "").trim();
+
+            // 🛑 CORRECCIÓN FILTRO ANTI-IP: Si el vector mapea únicamente la IP del host atacante, se descarta
+            const ipAddressRegex = /^\/?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/?$/;
+            if (ipAddressRegex.test(value)) return null;
+
+            const urlMatch = value.match(/https?:\/\/[^\s"'<>`\]\[)]+/i);
+            if (urlMatch) value = urlMatch[0];
+
+            if (value.startsWith("http")) {
+                try {
+                    const parsed = new URL(value);
+                    let path = parsed.pathname || "/";
+                    if (parsed.search) path += parsed.search;
+                    value = path;
+                } catch (e) {
+                    const slashIndex = value.indexOf("/", 8);
+                    if (slashIndex !== -1) value = value.substring(slashIndex);
+                }
+            }
+
+            value = value.trim();
+            if (!value || value === "/") return null;
+
+            if (!value.startsWith("/")) {
+                if (value.startsWith("admin") || value.startsWith("manager") || value.startsWith("host-manager") || value.startsWith("jsp-") || value.startsWith("servlets-") || value.startsWith("tomcat-") || value.includes(".xml") || value.includes(".php") || value.includes(".html")) {
+                    value = "/" + value;
+                }
+            }
+            return value;
+        }
+
+        function isInterestingVector(path) {
+            if (!path) return false;
+            const low = path.toLowerCase().trim();
+            if (low === "/" || low.includes("/usr/") || low.includes("dirb")) return false;
+
+            const ignoredExtensions = [".png", ".jpg", ".jpeg", ".gif", ".css", ".js", ".svg", ".ico", ".woff", ".woff2", ".ttf"];
+            if (ignoredExtensions.some(ext => low.endsWith(ext))) return false;
+
+            const interestingKeywords = ["/admin", "/manager", "/host-manager", "/jsp-examples", "/servlets-examples", "/tomcat-docs", "/web.xml", "/crossdomain.xml", "/sitemap.xml", "/api/", "/login", "/console", "/config", "/backup", "/upload", "/debug", "/test", "/internal", "/private", "/server-status", "/phpmyadmin"];
+            if (interestingKeywords.some(keyword => low.includes(keyword))) return true;
+
+            const depth = low.split("/").filter(Boolean).length;
+            return depth >= 1;
+        }
+
         rawFindings.forEach(f => {
             if (!f) return;
             const moduleName = String(f.module || f.name || "").toUpperCase();
-            const pathUrl = f.url || f.evidence || f.target || "";
+            if (moduleName !== "KATANA" && moduleName !== "GOBUSTER" && moduleName !== "FFUF") return;
 
-            if ((moduleName === "KATANA" || moduleName === "GOBUSTER" || moduleName === "FFUF") && pathUrl) {
-                const lowUrl = pathUrl.toLowerCase();
-                if (lowUrl.endsWith(".png") || lowUrl.endsWith(".jpg") || lowUrl.endsWith(".css") || lowUrl.endsWith(".js") || lowUrl.endsWith(".svg") || lowUrl.endsWith(".woff") || lowUrl.endsWith(".woff2")) {
-                    return; 
-                }
+            const evidenceStrings = collectFindingStrings(f);
+            const discoveredVectors = [];
+
+            evidenceStrings.forEach(text => { extractUrls(text).forEach(url => { discoveredVectors.push(url); }); });
+            evidenceStrings.forEach(text => { extractPaths(text).forEach(path => { discoveredVectors.push(path); }); });
+
+            discoveredVectors.forEach(rawVector => {
+                const cleanPath = normalizeVector(rawVector);
+                if (!cleanPath || !isInterestingVector(cleanPath)) return;
+
+                const dedupeKey = cleanPath.toLowerCase();
+                if (vectorsUniqueSeen.has(dedupeKey)) return;
+                vectorsUniqueSeen.add(dedupeKey);
+
                 totalVectors++;
-                vectorsHtml += `
-                    <div style="margin-bottom: 6px; border-bottom: 1px dashed rgba(255,51,51,0.1); padding-bottom: 4px; display: flex; align-items: center; font-size: 0.85rem;">
-                        <span style="color: #ff3333; margin-right: 15px; font-weight: bold;">[${moduleName}]</span>
-                        <span style="color: #888888; margin-right: 15px;">├─→ VIA PORT ${f.port || '80'}:</span>
-                        <span style="color: #00ffff; font-family: monospace; word-break: break-all;">${pathUrl}</span>
-                        <span style="margin-left: auto; color: #ffcc00; font-size: 0.75rem; background: rgba(255,204,0,0.1); padding: 1px 5px; border: 1px solid rgba(255,204,0,0.2);">EXPOSED</span>
-                    </div>
-                `;
+
+                let moduleIcon = "🛰️";
+                if (moduleName === "KATANA") moduleIcon = "🕷️";
+                if (moduleName === "GOBUSTER") moduleIcon = "📂";
+                if (moduleName === "FFUF") moduleIcon = "⚡";
+
+                let detectedPort = f.port || f.data?.port || "";
+                if (!detectedPort) {
+                    const portMatch = evidenceStrings.join(" ").match(/:(\d{2,5})\//);
+                    if (portMatch) detectedPort = portMatch[1];
+                }
+                if (!detectedPort) detectedPort = "80";
+
+            // 🎨 GENERADOR DE ENLACES ADAPTATIVO UNIVERSAL (FUSION-AI ENGINE)
+            let baseTargetIp = "127.0.0.1";
+            
+            if (typeof reportData !== "undefined") {
+                baseTargetIp = reportData.target || reportData.host || "127.0.0.1";
             }
+
+            // 🚀 RASTREADOR RECURSIVO DE IP REAL (ANTI-LOCALHOST) - FIJADO CON ÍNDICE DE TEXTO PLANO [0]
+            if ((baseTargetIp === "127.0.0.1" || baseTargetIp === "0" || baseTargetIp === "0.0.0.0") && typeof rawFindings !== "undefined") {
+                for (let f of rawFindings) {
+                    const blockStrings = collectFindingStrings(f);
+                    const fullText = blockStrings.join(" ");
+                    // Captura cualquier patrón de IP de subredes privadas (Clase A, B y C)
+                    const ipMatch = fullText.match(/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})/);
+                    if (ipMatch && ipMatch[0]) {
+                        baseTargetIp = ipMatch[0]; // 🚀 EXTRACTOR QUIRÚRGICO: Extrae el texto plano de la IP del laboratorio
+                        break;
+                    }
+                }
+            }
+
+            const protocol = (detectedPort === "443" || cleanPath.includes(":443")) ? "https" : "http";
+            let realDestinationUrl = "";
+
+            // CASO 1: Si la ruta ya contiene diagonales dobles o protocolo e IP (ej: //192.168.56.102:8180)
+            if (cleanPath.startsWith("//") || cleanPath.includes("://")) {
+                const rawUrl = cleanPath.startsWith("//") ? cleanPath.substring(2) : cleanPath.split("://")[1];
+                realDestinationUrl = protocol + "://" + rawUrl;
+            }
+            // CASO 2: Si la ruta contiene la IP limpia pero pegada sin protocolo
+            else if (cleanPath.includes(baseTargetIp)) {
+                const ipIndex = cleanPath.indexOf(baseTargetIp);
+                const rawClean = cleanPath.substring(ipIndex);
+                realDestinationUrl = protocol + "://" + rawClean;
+            }
+            // CASO 3: Caso estándar (ej: /admin, /manager, /.bash_history). Mapea dinámicamente la IP pescada + Puerto
+            else {
+                const formattedPath = cleanPath.startsWith("/") ? cleanPath : "/" + cleanPath;
+                realDestinationUrl = protocol + "://" + baseTargetIp + ":" + detectedPort + formattedPath;
+            }
+
+            vectorsHtml += `
+                <div style="margin-bottom:10px; padding:9px 10px; border-bottom:1px dashed rgba(255,51,51,0.18); font-family:'Courier New',monospace; font-size:0.84rem; background:rgba(255,0,0,0.015);">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <span style="color:#ff3333; font-weight:bold; min-width:100px;">${moduleIcon} [${moduleName}]</span>
+                        <span style="color:#777;">├─→ PORT ${detectedPort}</span>
+                        
+                        <!-- 🚀target="_blank" obliga a Firefox a abrir una pestaña nueva con la URL real -->
+                        <a href="${realDestinationUrl}" target="_blank" style="color:#00ffff; font-weight:bold; word-break:break-all; text-shadow:0 0 5px rgba(0,255,255,0.25); text-decoration:underline; cursor:pointer;" onmouseover="this.style.color='#39ff14';" onmouseout="this.style.color='#00ffff';">
+                            ${cleanPath} 🔗
+                        </a>
+
+                        <span style="margin-left:auto; color:#ffcc00; font-size:0.68rem; background:rgba(255,204,0,0.08); padding:3px 7px; border:1px solid rgba(255,204,0,0.2); letter-spacing:1px;">EXPOSED</span>
+                    </div>
+                </div>
+            `;
+            });
         });
 
         if (totalVectors > 0) {
             logScreen.innerHTML = vectorsHtml;
             vectorsContainer.style.display = "block";
-            
             if (vectorsPanelCollapsed) {
                 logScreen.style.display = "none";
                 btnControl.innerText = "[▶ EXPAND VECTORS (" + totalVectors + ")]";
@@ -1876,10 +2034,7 @@ function updateAttackReplay(reportData) {
             vectorsContainer.style.display = "none";
         }
     }
-
-    }
 }
-
 
 function cyberScrollToFinding(anchorElement) {
     try {
@@ -1889,7 +2044,6 @@ function cyberScrollToFinding(anchorElement) {
         const realTitle = decodeURIComponent(escape(atob(base64Title)));
         let targetEl = null;
 
-        // 1. Precise Match on H3 headers inside target cards
         const headers = document.querySelectorAll("h3");
         for (let h3 of headers) {
             if (h3.closest("#soc-mission-timeline")) continue;
@@ -1899,12 +2053,10 @@ function cyberScrollToFinding(anchorElement) {
             }
         }
 
-        // 2. Numerical Index Fallback Tracker
         if (!targetEl) {
             targetEl = document.getElementById("finding-card-" + fallbackIndex) || document.getElementById("finding-target-" + fallbackIndex);
         }
 
-        // 3. Automated Smooth Autoscroll Animation Execution
         if (targetEl) {
             targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
             const originalBorder = targetEl.style.borderColor || "rgba(57, 255, 20, 0.3)";
@@ -1921,8 +2073,6 @@ function cyberScrollToFinding(anchorElement) {
     return false;
 }
 
-
-// Variable global táctica para retener el estado de la ventana elegido por el operador
 let vectorsPanelCollapsed = false;
 
 function toggleVectorsWindow() {
@@ -1930,7 +2080,6 @@ function toggleVectorsWindow() {
     const btn = document.getElementById("toggle-vectors-btn");
     if (!screen || !btn) return;
     
-    // Invertir el estado manual de la persiana
     vectorsPanelCollapsed = !vectorsPanelCollapsed;
     
     if (vectorsPanelCollapsed) {
@@ -2153,4 +2302,4 @@ function toggleVectorsWindow() {
 
 </body>
 </html>
-                                                                                    
+      
