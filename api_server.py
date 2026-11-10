@@ -13,6 +13,7 @@ Port: 8000
 import os
 import json
 import threading
+import select
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
@@ -25,7 +26,8 @@ MEMORY_FILE = os.path.join(BASE_DIR, "outputs", "fusion_history.json")
 ENGINE_FILE = os.path.join(BASE_DIR, "outputs", "engine_status.json")
 
 memory_lock = threading.Lock()
-
+# 🎯 SAAS INTERACTIVE TERMINAL GLOBAL PROCESS REGISTRY
+GLOBAL_SESSIONS = {}
 # ============================================================ #
 # UNIFIED DATABASE SYSTEM OPERATIONS INFRASTRUCTURE
 # ============================================================ #
@@ -214,6 +216,21 @@ def calculate_status():
         elif severity == "low":
             low += 1
             
+    target_val = "192.168.1.254"
+    attacker_val = "192.168.56.101"
+    os_val = "Kali GNU/Linux Rolling"
+    created_val = "2026-07-13 12:21:02"
+
+    try:
+        with open("outputs/report.json", "r", encoding="utf-8") as f:
+            report_data = json.load(f)
+            target_val = report_data.get("target", target_val)
+            attacker_val = report_data.get("attacker_platform", report_data.get("attacker", attacker_val))
+            os_val = report_data.get("attacker_os", os_val)
+            created_val = report_data.get("created", created_val)
+    except Exception:
+        pass
+
     return {
         "status": "ONLINE",
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -222,7 +239,11 @@ def calculate_status():
         "high": high,
         "medium": medium,
         "low": low,
-        "findings": findings  
+        "target": target_val,
+        "attacker": attacker_val,
+        "os": os_val,
+        "created": created_val,
+        "findings": findings
     }
 
 # ============================================================ #
@@ -293,13 +314,12 @@ def calculate_security_posture():
 # HTTP API SERVER CORE LAYER WITH ENFORCED CORS MANAGEMENT
 # ============================================================ #
 class FusionAPIHandler(BaseHTTPRequestHandler):
-    
     def send_json(self, payload):
         data = json.dumps(payload, indent=4).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "X-Requested-With, Content-Type")
         self.end_headers()
         self.wfile.write(data)
@@ -308,44 +328,125 @@ class FusionAPIHandler(BaseHTTPRequestHandler):
         """ Handles complex asynchronous browser CORS pre-flight handshake tracking procedures safely """
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "X-Requested-With, Content-Type")
         self.end_headers()
 
     def do_GET(self):
-        path = urlparse(self.path).path
-
-        # Real-time metrics statistical calculations dashboard pipeline mapping
-        if path == "/api/dashboard/status":
+        path = urlparse(self.path).path.strip("/")
+        if path == "api/dashboard/status":
             self.send_json(calculate_status())
             return
-
-        # 📊 EXECUTIVE SECURITY POSTURE ENDPOINT RESOLUTION
-        if path == "/api/dashboard/posture":
+        if path == "api/dashboard/posture":
             self.send_json(calculate_security_posture())
             return
-
-        # Explicit full database files raw dump endpoint lookup boundings
-        if path == "/api/dashboard/findings":
+        if path == "api/dashboard/findings":
             self.send_json(load_memory())
             return
-
-        # ⚡ ENGINE LIVE TELEMETRY
-        if path == "/api/dashboard/engine":
+        if path == "api/dashboard/engine":
             self.send_json(load_engine_status())
             return
-
-        # General system environmental check loop trace validation parameters
-        if path == "/api/health":
+        if path == "api/health":
             self.send_json({
                 "fusion": "online",
                 "time": datetime.now().isoformat()
             })
             return
-
         self.send_response(404)
         self.end_headers()
 
+    def do_POST(self):
+        path = urlparse(self.path).path
+        
+        # 🚀 INTERACTIVE MANUAL TERMINAL COMMAND DISPATCHER ENDPOINT (SaaS Standard)
+        if "api/terminal/command" in path or path.strip("/") == "api/terminal/command":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                if content_length > 0:
+                    body = self.rfile.read(content_length).decode("utf-8")
+                    payload = json.loads(body)
+                else:
+                    payload = {}
+                
+                session_id = payload.get("session_id", "")
+                command = payload.get("command", "").strip()
+                
+                if command and session_id:
+                    print(f" [FUSION-CORE] Forwarding stdin vector: [{command}] to session: [{session_id}]")
+                    
+                    if session_id in GLOBAL_SESSIONS:
+                        proc = GLOBAL_SESSIONS[session_id]
+                        if proc.poll() is None:
+                            try:
+                                command_bytes = f"{command}\n".encode("utf-8")
+                                
+                                # Send operator input directly into the active PTY loop
+                                if hasattr(proc, "master_fd"):
+                                    os.write(proc.master_fd, command_bytes)
+                                    output_chunks = []
+                                    
+                                    # Collect currently available PTY output without blocking boundaries
+                                    for _ in range(20):
+                                        ready, _, _ = select.select([proc.master_fd], [], [], 0.05)
+                                        if not ready:
+                                            break
+                                        try:
+                                            chunk = os.read(proc.master_fd, 8192)
+                                            if not chunk:
+                                                break
+                                            output_chunks.append(chunk.decode("utf-8", errors="replace"))
+                                        except OSError:
+                                            break
+                                    terminal_output = "".join(output_chunks)
+                                else:
+                                    proc.stdin.write(command_bytes)
+                                    proc.stdin.flush()
+                                    terminal_output = ""
+                                    
+                                # STEP 4.1: Unified core payload response dispatch loop
+                                self.send_json({
+                                    "status": "SUCCESS",
+                                    "session_id": session_id,
+                                    "command": command,
+                                    "output": terminal_output
+                                })
+                                return
+                            except Exception as io_error:
+                                print(f" [❌ FUSION-CORE] Interactive terminal I/O failure: {io_error}")
+                                # STEP 4.2: Asynchronous I/O fault tolerance vector
+                                self.send_json({
+                                    "status": "ERROR",
+                                    "session_id": session_id,
+                                    "error": str(io_error)
+                                })
+                                return
+                        else:
+                            # STEP 4.3: Active runtime process termination boundary
+                            self.send_json({
+                                "status": "ERROR",
+                                "message": f"Target session {session_id} has terminated"
+                            })
+                            return
+                    else:
+                        # STEP 4.4: Active runtime memory map missing link boundary
+                        self.send_json({
+                            "status": "ERROR",
+                            "message": f"Active session reference {session_id} not found"
+                        })
+                        return
+                        
+                # STEP 4.5: Parameter payload boundary verification lookup
+                self.send_json({
+                    "status": "ERROR",
+                    "message": "Missing command or session identifier parameters"
+                })
+                return
+            except Exception as exc:
+                print(f" [❌ API ERROR] Failed to parse terminal command payload packet: {exc}")
+                return
+
+        self.send_response(404)
+        self.end_headers()
 # ================================================================= #
 # RUNTIME START SEQUENCE BOOTSTRAPPING MATRIX                      #
 # ================================================================= #

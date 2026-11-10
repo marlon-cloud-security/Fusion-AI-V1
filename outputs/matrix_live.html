@@ -226,12 +226,12 @@
 </header>
 <main>
         <div class="session-grid">
-            <div class="meta-item"><span>AUDITOR:</span> <span id="lbl-analyst">Pending Credentials</span></div>
-            <div class="meta-item"><span>EMAIL:</span> <span id="lbl-email">Pending Credentials</span></div>
-            <div class="meta-item"><span>TARGET HOST:</span> <span id="lbl-target-display">192.168.56.102</span></div>
-            <div class="meta-item"><span>ATTACK PLATFORM:</span> 192.168.56.101</div>
-            <div class="meta-item"><span>FINGERPRINTED OS:</span> Linux Operating System Environment</div>
-            <div class="meta-item"><span>TIMESTAMP:</span> 2026-07-13 12:21:02</div>
+            <div class="meta-item"><span>AUDITOR: </span><span id="lbl-analyst">Pending Credentials</span></div>
+            <div class="meta-item"><span>EMAIL: </span><span id="lbl-email">Pending Credentials</span></div>
+            <div class="meta-item"><span>TARGET HOST: </span><span id="lbl-target-display" style="color: #00ffff; font-weight: bold;">192.168.56.102</span></div>
+            <div class="meta-item"><span>ATTACK PLATFORM: </span><span id="lbl-attacker-display" style="color: #00ffff; font-weight: bold;">0.0.0.0</span></div>
+            <div class="meta-item"><span>FINGERPRINTED OS: </span><span id="lbl-os-display" style="color: #00ffff; font-weight: bold;">Linux Operating System Environment</span></div>
+            <div class="meta-item"><span>TIMESTAMP: </span><span id="lbl-time-display" style="color: #00ffff; font-weight: bold;">2026-07-13 12:21:02</span></div>
         </div>
         <br><br>
 <div class="stats-banner">
@@ -974,6 +974,11 @@ window.addEventListener('DOMContentLoaded', () => {
             }
             const data = await response.json();
             console.log("🧠 Master Suite Data Stream synchronized:", data);
+        if (data.target) document.getElementById('lbl-target-display').innerText = data.target;
+        if (data.attacker) document.getElementById('lbl-attacker-display').innerText = data.attacker;
+        if (data.os) document.getElementById('lbl-os-display').innerText = data.os;
+        if (data.created) document.getElementById('lbl-time-display').innerText = data.created;
+
 if (typeof updateAttackReplay === 'function' && data) { updateAttackReplay(data); }
 
 // ======================================================================
@@ -1247,10 +1252,30 @@ if (ui.expandable) {
                 <div style="color:var(--cyan); font-family: monospace; word-break: break-all;">${matchedUrl}</div>
                 <br>
                 <div class="data-label">VULNERABILITY MATRIX DESCRIPTION:</div>
-                <div>${description.replace(
-                    /\bCVE-\d{4}-\d{4,7}\b/gi,
-                    cve => `<a href="https://www.cve.org/CVERecord?id=${encodeURIComponent(cve.toUpperCase())}" target="_blank" rel="noopener noreferrer" style="color:#00ffff;font-weight:bold;text-decoration:none;border-bottom:1px solid #00ffff;">${cve.toUpperCase()} ↗</a>`
-                )}</div>
+<div>
+    ${finding.finding_type === 'manual_terminal_session' ? `
+        <div class="terminal-block fusion-interactive-terminal" 
+             data-session="${finding.session_id}" 
+             style="font-family: 'Consolas', 'Courier New', monospace; background-color: #010103; color: #5af75a; padding: 12px; border-left: 3px solid #39ff14; max-height: 360px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; margin-bottom: 8px; cursor: text;" 
+             onclick="focusFusionTerminal(this)">
+            
+            <div class="fusion-terminal-output">${renderAnsiColor(finding.description)}</div>
+            
+            <div class="fusion-terminal-input-line" style="display: flex; align-items: center; margin-top: 4px;">
+                <span style="color: #39ff14; font-weight: bold; margin-right: 6px;">$</span>
+                <input type="text" 
+                       class="interactive-terminal-input" 
+                       data-session="${finding.session_id}" 
+                       autocomplete="off" 
+                       spellcheck="false" 
+                       placeholder="Transmit interactive command string..." 
+                       onkeydown="handleFusionTerminalKey(event, this)" 
+                       style="flex: 1; background: transparent; border: none; outline: none; color: #5af75a; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.85rem; padding: 0;">
+            </div>
+        </div>
+    ` : description.replace(/\bCVE-\d{4}-\d{4,7}\b/gi, cve => `<a href="https://cve.org{encodeURIComponent(cve.toUpperCase())}" target="_blank" rel="noopener noreferrer" style="color: var(--cyan); text-decoration: underline;">${cve}</a>`)
+    }
+</div>
                 <br>
                 <div class="data-label">LIVE VERIFICATION METHOD (PROOF OF CONCEPT):</div>
                 <div class="terminal-block cmd-block" style="font-family: monospace;">${curlProof}</div>
@@ -2036,6 +2061,102 @@ function updateAttackReplay(reportData) {
     }
 }
 
+
+
+function escapeHtml(text) {
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function handleFusionTerminalKey(event, inputElement) {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        sendTerminalCommand(inputElement);
+        return;
+    }
+    if (event.key === "Tab") {
+        event.preventDefault();
+    }
+}
+
+function focusFusionTerminal(terminal) {
+    const input = terminal.querySelector(".interactive-terminal-input");
+    if (input) {
+        input.focus();
+    }
+}
+
+async function sendTerminalCommand(inputElement) {
+    const command = inputElement.value;
+    if (!command.trim()) return;
+
+    const sessionId = inputElement.getAttribute("data-session");
+    const terminal = inputElement.closest(".fusion-interactive-terminal");
+    const output = terminal ? terminal.querySelector(".fusion-terminal-output") : null;
+
+    if (!terminal || !output) return;
+
+    console.log(`[FUSION-AI-TERMINAL] Transmitting command to session ${sessionId}: ${command}`);
+
+    // Paint the operator command immediately on the stream view
+    output.innerHTML += `<span style="color:#39ff14;"><br>$ ${escapeHtml(command)}</span>\n`;
+    inputElement.value = "";
+
+    try {
+        const response = await fetch("http://127.0.0.1:8000/api/terminal/command", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: sessionId, command: command })
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok || result.status !== "SUCCESS") {
+            output.innerHTML += `<span style="color:#ff4444;"><br>[FUSION-AI] Terminal execution error.</span>\n`;
+            return;
+        }
+
+        if (result.output) {
+            output.innerHTML += renderAnsiColor(result.output);
+        }
+        
+        output.innerHTML += "\n";
+        terminal.scrollTop = terminal.scrollHeight;
+        inputElement.focus();
+    } catch (error) {
+        console.error("[FUSION-AI-TERMINAL] Network sub-system exception:", error);
+        output.innerHTML += `<span style="color:#ff4444;"><br>[FUSION-AI] Backend terminal connection failure.</span>\n`;
+        inputElement.focus();
+    }
+}
+
+
+function renderAnsiColor(text) {
+    if (!text) return "";
+    let clean = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\x1B\[0m/g, "</span>")
+        .replace(/\x1B\[1m/g, "<span style='font-weight:bold;'>")
+        .replace(/\x1B\[2m/g, "<span style='opacity:0.6;'>")
+        .replace(/\x1B\[31m/g, "<span style='color:#ff5555;'>")
+        .replace(/\x1B\[32m/g, "<span style='color:#55ff55;'>")
+        .replace(/\x1B\[33m/g, "<span style='color:#ffff55;'>")
+        .replace(/\x1B\[34m/g, "<span style='color:#5555ff;'>")
+        .replace(/\x1B\[35m/g, "<span style='color:#ff55ff;'>")
+        .replace(/\x1B\[36m/g, "<span style='color:#55ffff;'>")
+        .replace(/\x1B\[37m/g, "<span style='color:#ffffff;'>")
+        .replace(/\x1B\[43m/g, "<span style='background-color:#ffff55;color:#000;'>")
+        .replace(/\x1B\[[0-9;]*[mK]/g, "");
+    return clean;
+}
+
+
 function cyberScrollToFinding(anchorElement) {
     try {
         if (!anchorElement) return false;
@@ -2302,4 +2423,3 @@ function toggleVectorsWindow() {
 
 </body>
 </html>
-      
